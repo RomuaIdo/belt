@@ -1,5 +1,7 @@
 //Antes de compilar na Arduino IDE, instale a biblioteca ArduinoJson (por Benoit Blanchon) no Gerenciador de Bibliotecas.
 
+//falta sistema de pareamento e lista de requisições offline
+
 #include <WiFi.h>
 #include <esp_now.h>
 #include <WebServer.h>
