@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cinto Alerta — Belt setup</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%231f5d4c'/%3E%3Ccircle cx='16' cy='22' r='3' fill='%23fff'/%3E%3Cpath d='M9 17a10 10 0 0 1 14 0M5.5 13a15 15 0 0 1 21 0' fill='none' stroke='%23fff' stroke-width='2.3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ================= HOME VIEW ================= -->
+  <div id="view-home" class="view">
+    <header class="app-head">
+      <h1>Cinto Alerta</h1>
+      <p class="app-sub">Belt setup</p>
+    </header>
+
+    <main class="wrap">
+      <!-- First-load / error / empty states for the whole screen -->
+      <div id="home-status" class="status" hidden>
+        <p id="home-status-text" class="status-text"></p>
+        <button id="home-retry" type="button" class="btn btn-quiet" hidden>Try again</button>
+      </div>
+
+      <!-- A. Waiting to be set up -->
+      <section id="section-pending" class="panel panel-pending" hidden aria-labelledby="pending-title">
+        <div class="panel-head">
+          <svg class="broadcast" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="17" r="2" fill="currentColor"></circle>
+            <path d="M7.5 14.5a6 6 0 0 1 9 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+            <path d="M4.7 11.7a10 10 0 0 1 14.6 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+          </svg>
+          <h2 id="pending-title">Waiting to be set up</h2>
+          <span id="pending-count" class="count" aria-hidden="true"></span>
+        </div>
+        <ul id="pending-list" class="rows"></ul>
+      </section>
+
+      <!-- B. Watching now -->
+      <section id="section-devices" class="panel panel-devices" hidden aria-labelledby="devices-title">
+        <div class="panel-head">
+          <h2 id="devices-title">Watching now</h2>
+        </div>
+        <ul id="device-list" class="rows"></ul>
+      </section>
+    </main>
+  </div>
+
+  <!-- ================= FORM VIEW ================= -->
+  <div id="view-form" class="view" hidden>
+    <header class="app-head form-head">
+      <button id="form-back" type="button" class="iconbtn" aria-label="Back to belt list">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false">
+          <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+      </button>
+      <h1 id="form-title">Set up belt</h1>
+    </header>
+
+    <main class="wrap">
+      <div id="form-warning" class="banner banner-warn" hidden></div>
+
+      <form id="device-form" novalidate>
+        <div class="field">
+          <span class="label">Belt address (MAC)</span>
+          <output id="f-mac" class="mac-tag"></output>
+          <p class="hint">Comes from pairing. It matches the sticker on the belt.</p>
+        </div>
+
+        <div class="field">
+          <label for="f-nome">Elderly person's name</label>
+          <input type="text" id="f-nome" name="nome_idoso" autocomplete="off"
+                 maxlength="40" required aria-describedby="f-nome-err">
+          <p class="err" id="f-nome-err" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="f-apelido">Belt nickname <span class="opt">(optional)</span></label>
+          <input type="text" id="f-apelido" name="apelido" autocomplete="off"
+                 maxlength="30" aria-describedby="f-apelido-err">
+          <p class="hint">Shown in the list instead of the address. Example: "Grandma Maria's belt".</p>
+          <p class="err" id="f-apelido-err" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="f-chat">Telegram recipient</label>
+          <input type="text" id="f-chat" name="telegram_chat_id" inputmode="numeric"
+                 autocomplete="off" required aria-describedby="f-chat-err f-chat-help-toggle">
+          <button type="button" id="f-chat-help-toggle" class="disclosure" aria-expanded="false"
+                  aria-controls="f-chat-help">How do I get this number?</button>
+          <div id="f-chat-help" class="disclosure-body" hidden>
+            <ol>
+              <li>Open Telegram on the phone that will receive the alerts.</li>
+              <li>Find the project's bot and send it any message.</li>
+              <li>Search for <code>@userinfobot</code> and send <code>/start</code>.</li>
+              <li>It replies with your <code>Id</code> — that is the number for this field.</li>
+            </ol>
+            <p class="hint">Step 2 is the one people forget. Without it, Telegram blocks the bot
+              from messaging that person even with the right number.</p>
+          </div>
+          <div class="test-row">
+            <button type="button" id="f-test" class="btn btn-quiet">Send test</button>
+            <span id="f-test-result" class="test-result" role="status" aria-live="polite"></span>
+          </div>
+          <p class="err" id="f-chat-err" hidden></p>
+        </div>
+
+        <div class="field">
+          <label for="f-msg">Alert message</label>
+          <textarea id="f-msg" name="mensagem" rows="4" required
+                    aria-describedby="f-msg-err f-msg-count"></textarea>
+          <div class="msg-meta">
+            <span id="f-msg-count" class="counter">0 / 300</span>
+          </div>
+          <div class="chips" role="group" aria-label="Insert a placeholder">
+            <button type="button" class="chip" data-ph="{nome}">{nome}</button>
+            <button type="button" class="chip" data-ph="{apelido}">{apelido}</button>
+            <button type="button" class="chip" data-ph="{hora}">{hora}</button>
+            <button type="button" class="chip" data-ph="{data}">{data}</button>
+            <button type="button" class="chip" data-ph="{bateria}">{bateria}</button>
+          </div>
+          <div class="preview">
+            <span class="preview-label">Preview</span>
+            <p id="f-msg-preview" class="preview-text"></p>
+            <p id="f-msg-phwarn" class="err" hidden></p>
+          </div>
+          <p class="err" id="f-msg-err" hidden></p>
+        </div>
+
+        <div class="field field-toggle">
+          <label class="switch" for="f-ativo">
+            <input type="checkbox" id="f-ativo" name="ativo" checked>
+            <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+            <span class="switch-text">
+              <span class="switch-title">Active</span>
+              <span class="hint">When off, the master ignores alerts from this belt.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" id="f-save" class="btn btn-primary">Save</button>
+          <button type="button" id="f-cancel" class="btn btn-quiet">Cancel</button>
+        </div>
+        <p id="f-save-state" class="save-state" role="status" aria-live="polite" hidden></p>
+      </form>
+    </main>
+  </div>
+
+  <!-- ================= CONFIRM DIALOG ================= -->
+  <dialog id="confirm" class="confirm">
+    <form method="dialog">
+      <p id="confirm-text" class="confirm-text"></p>
+      <div class="confirm-actions">
+        <button value="cancel" class="btn btn-quiet">Keep it</button>
+        <button value="ok" id="confirm-ok" class="btn btn-danger">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ================= TOAST ================= -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,411 @@
+/* Cinto Alerta — front end de configuração do master.
+   Servido pelo ESP32-S3 a partir do LittleFS. Sem recursos externos, sem framework. */
+
+:root {
+  --bg: #eef1ef;
+  --surface: #ffffff;
+  --ink: #1b2420;
+  --ink-soft: #5a6560;
+  --line: #d5dad7;
+
+  --pine: #1f5d4c;
+  --pine-tint: #e4efea;
+  --ochre: #b8791f;
+  --ochre-tint: #f6ecda;
+  --rust: #a23b2e;
+  --rust-tint: #f3e2df;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --gap: 16px;
+  --radius: 10px;
+  --tap: 44px;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 var(--sans);
+}
+
+h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
+
+/* ---------- layout ---------- */
+
+.view { min-height: 100vh; padding-bottom: 48px; }
+
+.wrap {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 var(--gap);
+}
+
+.app-head {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px var(--gap) 20px;
+}
+
+.app-head h1 { font-size: 1.5rem; letter-spacing: -0.01em; }
+.app-sub { margin: 2px 0 0; color: var(--ink-soft); }
+
+.form-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+.form-head h1 { font-size: 1.1875rem; }
+
+/* ---------- panels ---------- */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  margin-top: var(--gap);
+  overflow: hidden;
+}
+.panel-pending { border-left-color: var(--ochre); }
+.panel-devices { border-left-color: var(--pine); }
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-head h2 { font-size: 1.1875rem; }
+
+.panel-pending .broadcast { color: var(--ochre); flex: none; }
+
+.count {
+  margin-left: auto;
+  font: 0.8125rem/1 var(--mono);
+  color: var(--ochre);
+  background: var(--ochre-tint);
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
+/* ---------- rows ---------- */
+
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows > li { padding: 16px; border-top: 1px solid var(--line); }
+.rows > li:first-child { border-top: 0; }
+
+.row-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+
+.dev-name { font-size: 1.0625rem; font-weight: 600; }
+.dev-alias { color: var(--ink-soft); }
+
+.mac {
+  font: 0.9375rem/1.4 var(--mono);
+  letter-spacing: 0.02em;
+}
+.mac-sm { font-size: 0.8125rem; color: var(--ink-soft); }
+
+.dev-meta { margin: 4px 0 0; color: var(--ink-soft); font-size: 0.8125rem; }
+
+.state-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+.state-dot::before {
+  content: "";
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--pine);
+}
+.state-dot.is-off::before { background: var(--rust); }
+.state-dot.is-off { color: var(--rust); }
+
+.row-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* one gentle pulse when a pending row first arrives */
+@keyframes arrive {
+  from { background: var(--ochre-tint); }
+  to   { background: transparent; }
+}
+.rows > li.just-arrived { animation: arrive 2.4s ease-out 1; }
+@media (prefers-reduced-motion: reduce) {
+  .rows > li.just-arrived { animation: none; }
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+  font: inherit;
+  min-height: var(--tap);
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--ink-soft); }
+.btn-primary {
+  background: var(--pine);
+  border-color: var(--pine);
+  color: #fff;
+  padding-inline: 24px;
+}
+.btn-primary:hover { background: #17493b; border-color: #17493b; }
+.btn-danger { background: var(--rust); border-color: var(--rust); color: #fff; }
+.btn-danger:hover { background: #8a3025; border-color: #8a3025; }
+.btn-quiet { background: transparent; }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.btn[disabled]:hover { border-color: var(--line); }
+
+.iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-left: -10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  border-radius: 8px;
+}
+.iconbtn:hover { background: var(--pine-tint); }
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--pine);
+  outline-offset: 2px;
+}
+
+/* ---------- whole-screen status ---------- */
+
+.status {
+  margin-top: 40px;
+  text-align: center;
+  color: var(--ink-soft);
+}
+.status-text { margin: 0 auto 16px; max-width: 40ch; }
+.status.is-error .status-text { color: var(--rust); }
+
+/* ---------- form ---------- */
+
+.field { margin-top: 22px; }
+.field:first-of-type { margin-top: 8px; }
+
+.label, .field > label:not(.switch) {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.opt { font-weight: 400; color: var(--ink-soft); }
+
+input[type="text"], textarea {
+  width: 100%;
+  font: 16px/1.5 var(--sans);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 11px 12px;
+}
+input[type="text"]:focus, textarea:focus { border-color: var(--pine); }
+textarea { resize: vertical; min-height: 96px; }
+
+.field.invalid input[type="text"],
+.field.invalid textarea { border-color: var(--rust); }
+
+.hint { margin: 6px 0 0; color: var(--ink-soft); font-size: 0.875rem; max-width: 60ch; }
+.err {
+  margin: 6px 0 0;
+  color: var(--rust);
+  font-size: 0.875rem;
+}
+
+.mac-tag {
+  display: block;
+  font: 1.0625rem/1.4 var(--mono);
+  letter-spacing: 0.04em;
+  background: var(--pine-tint);
+  color: var(--pine);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+/* disclosure ("How do I get this number?") */
+.disclosure {
+  margin-top: 8px;
+  padding: 4px 0;
+  min-height: var(--tap);
+  border: 0;
+  background: transparent;
+  color: var(--pine);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.disclosure-body {
+  margin-top: 4px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border-radius: 8px;
+}
+.disclosure-body ol { margin: 0 0 4px; padding-left: 20px; }
+.disclosure-body li { margin: 4px 0; max-width: 60ch; }
+.disclosure-body code {
+  font: 0.875rem var(--mono);
+  background: var(--surface);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.test-row {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.test-result { font-size: 0.875rem; color: var(--ink-soft); }
+.test-result.ok { color: var(--pine); }
+.test-result.bad { color: var(--rust); }
+
+.msg-meta { display: flex; justify-content: flex-end; margin-top: 6px; }
+.counter { font: 0.8125rem/1 var(--mono); color: var(--ink-soft); }
+.counter.over { color: var(--rust); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip {
+  font: 0.875rem var(--mono);
+  min-height: var(--tap);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--pine); color: var(--pine); }
+
+.preview {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.preview-label {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+.preview-text { margin: 0; white-space: pre-wrap; max-width: 60ch; }
+
+/* toggle */
+.field-toggle { margin-top: 26px; }
+.switch { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+.switch > input {
+  position: absolute;
+  width: 1px; height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+.switch-track {
+  flex: none;
+  position: relative;
+  margin-top: 2px;
+  width: 46px; height: 28px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 0.15s ease;
+}
+.switch-thumb {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.switch > input:checked + .switch-track { background: var(--pine); }
+.switch > input:checked + .switch-track .switch-thumb { transform: translateX(18px); }
+.switch > input:focus-visible + .switch-track { outline: 2px solid var(--pine); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .switch-track, .switch-thumb { transition: none; }
+}
+.switch-text { display: block; }
+.switch-title { display: block; font-weight: 600; }
+.switch-text .hint { margin-top: 2px; }
+
+.form-actions {
+  margin-top: 28px;
+  display: flex;
+  gap: 10px;
+}
+.form-actions .btn-primary { flex: 1; }
+.save-state { margin: 12px 0 0; color: var(--ink-soft); font-size: 0.9375rem; }
+
+/* banner */
+.banner {
+  margin-top: var(--gap);
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+}
+.banner-warn { background: var(--ochre-tint); color: #7a4f12; }
+
+/* ---------- confirm dialog ---------- */
+
+.confirm {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  max-width: 340px;
+  width: calc(100% - 32px);
+  color: var(--ink);
+}
+.confirm::backdrop { background: rgba(27, 36, 32, 0.4); }
+.confirm-text { margin: 0 0 18px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* ---------- toast ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  background: var(--ink);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  box-shadow: 0 6px 20px rgba(27, 36, 32, 0.25);
+}
+
+/* ---------- wider screens ---------- */
+
+@media (min-width: 600px) {
+  .panel { border-left-width: 4px; }
+  .row-main { align-items: baseline; }
+}

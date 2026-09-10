@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cinto Alerta</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f4f4f9; }
+    .container { max-width: 400px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    h1 { color: #d9534f; text-align: center; }
+    label { font-weight: bold; display: block; margin-top: 15px; }
+    input { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { width: 100%; padding: 10px; background: #5cb85c; color: white; border: none; border-radius: 4px; margin-top: 20px; font-size: 16px; cursor: pointer; }
+    button:hover { background: #4cae4c; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Cinto Alerta</h1>
+    <form action="/salvar" method="POST">
+      <h3>1. Internet (Wi-Fi)</h3>
+      <label>Nome da Rede (SSID):</label> <input type="text" name="ssid" required>
+      <label>Senha:</label> <input type="password" name="pass">
+      
+      <h3>2. Configuração do Slave</h3>
+      <label>MAC Address (ex: AA:BB:CC:DD:EE:FF):</label> <input type="text" name="mac" required>
+      <label>Nome do Usuário (Idoso):</label> <input type="text" name="nome" required>
+      
+      <h3>3. Contatos (Telegram)</h3>
+      <label>Bot Token:</label> <input type="text" name="token" required>
+      <label>Chat ID do Contato:</label> <input type="text" name="chatid" required>
+      
+      <button type="submit">Salvar Configurações</button>
+    </form>
+  </div>
+</body>
+</html>
