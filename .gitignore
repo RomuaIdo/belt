@@ -1,0 +1,54 @@
+# Project documentation generated or kept outside source control
+docs/
+
+# PlatformIO / embedded build outputs
+.pio/
+.pioenvs/
+.piolibdeps/
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.o
+*.obj
+compile_commands.json
+
+# Frontend dependencies and build outputs
+node_modules/
+dist/
+build/
+.cache/
+.parcel-cache/
+.vite/
+
+# Test and coverage artifacts
+coverage/
+*.gcda
+*.gcno
+*.gcov
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Local environment/configuration
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local assistant/tooling state
+.claude/
+.mcp.json
