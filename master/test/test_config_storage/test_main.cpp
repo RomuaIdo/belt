@@ -1,4 +1,4 @@
-// Persistence validation across a real reboot (ESP.restart()).
+// Persistence config validation across a real reboot (ESP.restart()).
 // Usage: pio test -e esp32-s3-devkitc-1-test -f test_config_storage
 // Note: Requires a UART bridge (e.g., DevKitC-1). Native USB-CDC drops the Serial link on reset.
 
