@@ -1,72 +1,67 @@
-# Cinto Alerta
+# Cinto Alerta (Fall Alert Belt)
 
-Detector e notificador de quedas para pessoas idosas. Dois cintos com ESP32-S3 e MPU-6050
-classificam quedas com um modelo embarcado, avisam o usuário por vibração e LED e — se o
-usuário não cancelar — enviam um alerta via ESP-NOW para uma estação master, que notifica um
-cuidador pelo Telegram.
+Fall detector and notifier for elderly people. Two belts with an ESP32-S3 and an MPU-6050
+classify falls with an embedded model, warn the wearer with vibration and an LED and — if the
+wearer doesn't cancel — send an alert via ESP-NOW to a master station, which notifies a
+caregiver over Telegram.
 
-Projeto acadêmico de Oficinas de Integração 2 — Engenharia de Computação, UTFPR.
-Equipe: Rafael de Andrade Fernandes, Arthur Gabriel Pellegrini Heberle, Vinícius Romualdo Silva.
+Academic project for Integration Workshop 2 — Computer Engineering, UTFPR.
+Team: Rafael de Andrade Fernandes, Arthur Gabriel Pellegrini Heberle, Vinícius Romualdo Silva.
 
-## Arquitetura
+## Architecture
 
 ```
-2x CINTO (slave)            1x MASTER                    NOTIFICAÇÃO
-ESP32-S3 Supermini         ESP32-S3 Dev Module          Telegram Bot API
-MPU-6050                   ligado à tomada
-LiPo 500 mAh      ESP-NOW           Wi-Fi / HTTPS
-motor de vibração ───────►          ──────────►          celular do cuidador
-botão(s)          (MAC, sem IP)     (REST + JSON)
+2x BELT (slave)              1x MASTER                     NOTIFICATION
+ESP32-S3 Supermini          ESP32-S3 Dev Module           Telegram Bot API
+MPU-6050                    plugged into an outlet
+LiPo 500 mAh       ESP-NOW            Wi-Fi / HTTPS
+vibration motor  ───────►             ──────────►           caregiver's phone
+button(s)         (MAC, no IP)        (REST + JSON)
 ```
 
-O identificador de cada cinto é o **endereço MAC** — não há IP entre cinto e master.
-Detalhes e decisões fechadas em [`docs/CONTEXTO.md`](docs/CONTEXTO.md).
+Each belt is identified by its **MAC address** — there is no IP between belt and master.
 
-## Estrutura do repositório
+## Repository layout
 
-| Caminho | Conteúdo |
+| Path | Contents |
 |---|---|
-| `frontend/` | Interface de configuração do master (M1.1) — HTML/CSS/JS puro, servido do LittleFS |
-| `master/main.cpp` | Firmware do master (protótipo: SoftAP, portal cativo, ESP-NOW, Telegram) |
-| `docs/CONTEXTO.md` | Fonte única de verdade: arquitetura, hardware, cronograma, conflitos em aberto |
-| `docs/CLAUDE.md` | Regras de trabalho e fatos técnicos que não podem ser contrariados |
-| `docs/master/FRONTEND_CONFIG.md` | Especificação da interface de configuração e contrato da API |
-| `.claude/skills/frontend-master/` | Regras e checklist para mexer no `frontend/` |
+| `master/` | Master firmware — PlatformIO project (`include/`, `src/`, `test/`) targeting an ESP32-S3-DevKitC-1 (N16R8: 16 MB flash, 8 MB PSRAM) |
+| `master/prompt.md` | Master's class diagram and per-class design notes (architecture source of truth) |
+| `master/prototypes/` | Work in progress from other team members, not yet wired into the firmware above (see below) |
+| `docs/Plano_de_Projeto.pdf` | Project plan submitted for the course |
 
-## Front end de configuração (`frontend/`)
+## Master firmware (`master/`)
 
-Interface onde o cuidador associa cada cinto (identificado pelo MAC que aparece após o
-pareamento) a um nome, uma mensagem de alerta e um destinatário no Telegram.
+PlatformIO project (Arduino framework) implementing the master station: SoftAP + captive
+portal for setup, a config/monitoring web dashboard, ESP-NOW reception with an immediate ACK,
+Telegram notifications, and a power-loss-safe retry queue on LittleFS. The domain model,
+storage and web layers are covered by the Unity test suites under `master/test/`.
 
-Restrições: sem recursos externos (o celular fica na SoftAP do master, sem internet), sem
-framework, sem etapa de build, menos de 100 KB. Ver
-[`docs/master/FRONTEND_CONFIG.md`](docs/master/FRONTEND_CONFIG.md).
+The belt↔master pairing handshake beyond manual web-UI peer registration (M1.4) and the belt
+(slave) firmware itself have not been implemented yet.
 
-### Rodar localmente
+## Work in progress (`master/prototypes/`)
 
-```bash
-cd frontend
-python -m http.server 8000    # ou: python3 -m http.server 8000
-# abrir http://localhost:8000
-```
+Prototype code contributed by other team members that **is not yet connected** to the firmware
+above — treat it as a separate, standalone exploration until it gets wired in:
 
-`app.js` começa com `const MOCK = true`: todas as chamadas são atendidas por `mock.js`
-(dados falsos, latência simulada, um cinto pendente novo aparece após ~15 s). `mock.js` é só
-para desenvolvimento — **não** vai para `firmware-master/data/`. O deploy no LittleFS é
-`index.html` + `style.css` + `app.js`.
+- `frontend/` — master configuration UI mockup (plain HTML/CSS/JS, meant to eventually be
+  served from LittleFS). `app.js` starts with `const MOCK = true`: every call is served by
+  `mock.js` (fake data, simulated latency). Run it locally with:
+  ```bash
+  cd master/prototypes/frontend
+  python -m http.server 8000    # or: python3 -m http.server 8000
+  # open http://localhost:8000
+  ```
+- `telegram_call.cpp` — standalone prototype for the Telegram Bot API HTTP call, independent
+  from `master/src/Messaging/TelegramNotifier.cpp`.
 
-## Firmware
+## Schedule
 
-O firmware do master está em `master/main.cpp`, hoje compilado pela Arduino IDE (biblioteca
-ArduinoJson). O sistema de pareamento cinto↔master via ESP-NOW (M1.4) e o firmware do cinto
-ainda não foram implementados.
-
-## Cronograma
-
-| Milestone | Tema | Prazo |
+| Milestone | Theme | Deadline |
 |---|---|---|
-| M1 | Infraestrutura web e comunicação | 07/10/2026 |
-| M2 | Eletrônica, energia e machine learning | 11/11/2026 |
-| M3 | Prototipagem e testes finais | 25/11/2026 |
-| M4 | Entrega final (relatório, vídeo, blog) | 02/12/2026 |
-| M5 | Apresentação para a banca | 09/12/2026 |
+| M1 | Web infrastructure and communication | Oct 07, 2026 |
+| M2 | Electronics, power and machine learning | Nov 11, 2026 |
+| M3 | Prototyping and final tests | Nov 25, 2026 |
+| M4 | Final submission (report, video, blog) | Dec 02, 2026 |
+| M5 | Committee presentation | Dec 09, 2026 |

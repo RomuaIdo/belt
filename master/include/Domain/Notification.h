@@ -3,11 +3,11 @@
 #include <Arduino.h>
 #include <vector>
 
-class QueuedNotification {
+class Notification {
 public:
-    QueuedNotification() = default;
-    QueuedNotification(String eventId, uint32_t timestamp, String originMac,
-                        String message, std::vector<String> pendingPhones);
+    Notification() = default;
+    Notification(String eventId, uint32_t timestamp, String originMac,
+                 String message, std::vector<String> pendingPhones);
 
     bool isCompleted() const { return pendingPhones.empty(); }
     void markPhoneAsSent(const String& phone);

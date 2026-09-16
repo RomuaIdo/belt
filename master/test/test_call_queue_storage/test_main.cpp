@@ -7,7 +7,7 @@
 #include <LittleFS.h>
 #include <vector>
 
-#include "Domain/QueuedNotification.h"
+#include "Domain/Notification.h"
 #include "Storage/CallQueueStorage.h"
 
 namespace {
@@ -21,11 +21,11 @@ CallQueueStorage* storage = nullptr;
 String writePhaseMarker;
 
 String eventIdA() {
-    return QueuedNotification::makeEventId("AA:BB:CC:DD:EE:01", 1700000000);
+    return Notification::makeEventId("AA:BB:CC:DD:EE:01", 1700000000);
 }
 
 String eventIdB() {
-    return QueuedNotification::makeEventId("AA:BB:CC:DD:EE:02", 1700000100);
+    return Notification::makeEventId("AA:BB:CC:DD:EE:02", 1700000100);
 }
 
 String corruptEventId() {
@@ -40,14 +40,14 @@ String pathForEvent(const String& eventId) {
     return String(kTestQueueDir) + "/evt_" + eventId + ".json";
 }
 
-QueuedNotification makeNotificationA() {
+Notification makeNotificationA() {
     std::vector<String> phones = {"11111111111", "22222222222"};
-    return QueuedNotification(eventIdA(), 1700000000, "AA:BB:CC:DD:EE:01", "Fall alert A", phones);
+    return Notification(eventIdA(), 1700000000, "AA:BB:CC:DD:EE:01", "Fall alert A", phones);
 }
 
-QueuedNotification makeNotificationB() {
+Notification makeNotificationB() {
     std::vector<String> phones = {"33333333333"};
-    return QueuedNotification(eventIdB(), 1700000100, "AA:BB:CC:DD:EE:02", "Fall alert B", phones);
+    return Notification(eventIdB(), 1700000100, "AA:BB:CC:DD:EE:02", "Fall alert B", phones);
 }
 
 
@@ -117,7 +117,7 @@ void test_reload_after_reboot_restores_only_the_valid_events() {
 void test_reload_after_reboot_preserves_partial_update_progress() {
     auto pending = storage->loadAllPending();
 
-    const QueuedNotification* found = nullptr;
+    const Notification* found = nullptr;
     for (const auto& n : pending) {
         if (n.getEventId() == eventIdA()) {
             found = &n;
@@ -138,7 +138,7 @@ void test_reload_after_reboot_preserves_partial_update_progress() {
 void test_reload_after_reboot_restores_event_b_untouched() {
     auto pending = storage->loadAllPending();
 
-    const QueuedNotification* found = nullptr;
+    const Notification* found = nullptr;
     for (const auto& n : pending) {
         if (n.getEventId() == eventIdB()) {
             found = &n;
@@ -174,7 +174,7 @@ void test_purge_invalid_entries_removes_only_the_corrupted_file() {
 
 void test_completing_an_event_and_removing_it_shrinks_the_queue() {
     auto pending = storage->loadAllPending();
-    QueuedNotification eventB;
+    Notification eventB;
     bool foundB = false;
     for (auto& n : pending) {
         if (n.getEventId() == eventIdB()) {
@@ -195,7 +195,7 @@ void test_completing_an_event_and_removing_it_shrinks_the_queue() {
 
 void test_purge_invalid_entries_removes_orphaned_completed_file() {
     std::vector<String> noPendingPhones;
-    QueuedNotification orphan(orphanEventId(), 1700000300, "AA:BB:CC:DD:EE:03", "already delivered", noPendingPhones);
+    Notification orphan(orphanEventId(), 1700000300, "AA:BB:CC:DD:EE:03", "already delivered", noPendingPhones);
     TEST_ASSERT_TRUE(storage->updatePending(orphan));
 
     // loadAllPending() already excludes it (nothing left to deliver), but
@@ -235,7 +235,7 @@ void setup() {
         bool okA = storage->enqueue(makeNotificationA());
         bool okB = storage->enqueue(makeNotificationB());
 
-        QueuedNotification partiallySentA = makeNotificationA();
+        Notification partiallySentA = makeNotificationA();
         partiallySentA.markPhoneAsSent("11111111111");
         bool okUpdate = storage->updatePending(partiallySentA);
 
