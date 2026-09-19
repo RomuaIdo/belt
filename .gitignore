@@ -1,5 +1,6 @@
 # Project documentation generated or kept outside source control
-docs/
+docs_claude/
+documents/
 
 # PlatformIO / embedded build outputs
 .pio/
