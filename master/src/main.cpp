@@ -3,10 +3,8 @@
 
 static AppController appController;
 
-void setup() {
-    appController.setup();
-}
+void setup() {}
 
 void loop() {
-    appController.loop();
+    appController.execute();
 }

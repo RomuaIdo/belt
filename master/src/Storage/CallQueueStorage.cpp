@@ -51,7 +51,7 @@ bool CallQueueStorage::writeToFile(const QueuedNotification& notification) const
     for (const auto& phone : notification.getPendingPhones()) {
         pending.add(phone);
     }
-
+    
     File file = LittleFS.open(pathFor(notification.getEventId()), "w");
     if (!file) return false;
     bool ok = serializeJson(doc, file) > 0;
