@@ -5,7 +5,7 @@
 #include <ArduinoJson.h>
 #include <unity.h>
 
-#include "telegram_call.h"
+#include "Messaging/telegram_call.h"
 
 void test_payload_uses_telegram_fields() {
     const String payload = createJsonPayload("123456789", "Alerta de queda");
