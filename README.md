@@ -1,72 +1,171 @@
-# Cinto Alerta
+<div align="center">
 
-Detector e notificador de quedas para pessoas idosas. Dois cintos com ESP32-S3 e MPU-6050
-classificam quedas com um modelo embarcado, avisam o usuário por vibração e LED e — se o
-usuário não cancelar — enviam um alerta via ESP-NOW para uma estação master, que notifica um
-cuidador pelo Telegram.
+# 🔔 Cinto Alerta
 
-Projeto acadêmico de Oficinas de Integração 2 — Engenharia de Computação, UTFPR.
-Equipe: Rafael de Andrade Fernandes, Arthur Gabriel Pellegrini Heberle, Vinícius Romualdo Silva.
+### Um cinto que percebe a queda de um idoso e chama socorro sozinho
 
-## Arquitetura
+![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow)
+![Instituição](https://img.shields.io/badge/UTFPR-Engenharia%20de%20Computa%C3%A7%C3%A3o-blue)
+![Tecnologia](https://img.shields.io/badge/TinyML-ESP32--S3-orange)
 
+</div>
+
+---
+
+## O problema não é a queda. É o tempo no chão.
+
+Quedas estão entre as principais causas de lesão e de perda de autonomia em pessoas idosas. Mas o que determina a gravidade não é apenas o impacto — é **quanto tempo a pessoa fica sem atendimento**.
+
+Quem cai sozinho em casa e não consegue se levantar pode passar horas no chão. Nesse intervalo, lesões se agravam e o risco de complicações sobe.
+
+A resposta óbvia — "ela liga para alguém" — falha exatamente quando é mais necessária. Se houve desmaio, fratura de quadril ou o celular ficou em outro cômodo, não há ligação nenhuma.
+
+---
+
+## Como funciona
+
+O fluxo abaixo descreve o funcionamento previsto. A integração do firmware ainda
+está em desenvolvimento; veja o estado atual e os comandos no [guia do master](master/README.md).
+
+<div align="center">
+
+```mermaid
+flowchart LR
+    A["🚶 Queda<br/>detectada"] --> B["📳 Cinto vibra<br/>e acende o LED"]
+    B --> C{"Usuário<br/>cancela?"}
+    C -->|Sim| D["✅ Alarme<br/>descartado"]
+    C -->|Não| E["📡 Alerta enviado<br/>para a base"]
+    E --> F["💬 Cuidador recebe<br/>no Telegram"]
 ```
-2x CINTO (slave)            1x MASTER                    NOTIFICAÇÃO
-ESP32-S3 Supermini         ESP32-S3 Dev Module          Telegram Bot API
-MPU-6050                   ligado à tomada
-LiPo 500 mAh      ESP-NOW           Wi-Fi / HTTPS
-motor de vibração ───────►          ──────────►          celular do cuidador
-botão(s)          (MAC, sem IP)     (REST + JSON)
+
+</div>
+
+O cinto detecta a queda por conta própria, usando um sensor de movimento e um modelo de inteligência artificial que roda **dentro do próprio dispositivo** — sem internet, sem nuvem, sem enviar dados para lugar nenhum.
+
+Se o usuário estiver bem, um toque no botão cancela. Se não houver resposta, o alerta segue para o celular de um familiar ou cuidador.
+
+---
+
+## O que o dispositivo faz
+
+| | |
+|:--:|:--|
+| 🎯 | **Detecta quedas automaticamente** — sem depender de a pessoa apertar nada |
+| 📳 | **Avisa antes de alarmar** — vibração e LED dão alguns segundos para cancelar |
+| 🆘 | **Botão de socorro manual** — para mal-estar, dor ou confusão, que nenhum sensor detecta |
+| 💬 | **Notifica pelo Telegram** — mensagem personalizável para cada cuidador |
+| 🔋 | **Avisa quando a bateria está acabando** — antes de ficar desprotegido |
+| 📶 | **Funciona sem depender do Wi-Fi da casa** — o cinto fala direto com a base |
+| ⚠️ | **Avisa se o próprio aparelho parar** — um dispositivo mudo não é confundido com "está tudo bem" |
+
+---
+
+## Decisões de projeto
+
+<details>
+<summary><b>Por que na cintura, e não no pulso?</b></summary>
+
+<br>
+
+Foi a primeira decisão técnica do projeto, e talvez a mais importante.
+
+A ideia original era um smartwatch — mais moderno, mais aceitável socialmente. O problema é que **o pulso é a pior posição possível para detectar quedas**.
+
+O braço se move de forma independente do corpo. Bater a mão na mesa, aplaudir, escovar os dentes, tirar o relógio e apoiá-lo — tudo isso gera assinaturas muito parecidas com uma queda. O resultado é alarme falso constante, e um dispositivo que dá alarme falso todo dia é um dispositivo que o usuário desliga.
+
+A cintura resolve isso porque **acompanha o centro de massa do corpo**: só se move de verdade quando o corpo inteiro se move.
+
+</details>
+
+<details>
+<summary><b>Por que existe uma janela de cancelamento?</b></summary>
+
+<br>
+
+Detectar um impacto é fácil. Distinguir **"caiu"** de **"sentou rápido no sofá"** é o problema que a área ainda não resolveu bem.
+
+A janela de cancelamento transforma um erro grave em um pequeno incômodo: sem ela, cada alarme falso é um susto na família; com ela, é um botão apertado.
+
+E tem um bônus — cada cancelamento é um exemplo real de "isso não era queda", que serve para melhorar o modelo.
+
+</details>
+
+<details>
+<summary><b>Por que o aparelho avisa quando ele mesmo para de funcionar?</b></summary>
+
+<br>
+
+Um cinto com bateria descarregada, travado ou fora de alcance é **indistinguível de um idoso que está bem** — nos dois casos o sistema fica em silêncio.
+
+Um sistema de segurança cujo modo de falha é "não avisar nada" não é um sistema de segurança. Por isso o cinto envia sinais periódicos de "estou aqui", e a base avisa o cuidador se eles pararem de chegar — com uma mensagem diferente, deixando claro que o problema é o aparelho, não a pessoa.
+
+</details>
+
+---
+
+## O sistema
+
+<div align="center">
+
+```mermaid
+flowchart LR
+    A["👤 CINTO<br/>sensor de movimento<br/>IA embarcada<br/>bateria"]
+    B["🏠 BASE<br/>ligada à tomada<br/>página de configuração"]
+    C["💬 Telegram"]
+    D["📱 Cuidador"]
+
+    A -->|rádio direto| B
+    B -->|internet| C
+    C --> D
 ```
 
-O identificador de cada cinto é o **endereço MAC** — não há IP entre cinto e master.
-Detalhes e decisões fechadas em [`docs/CONTEXTO.md`](docs/CONTEXTO.md).
+</div>
 
-## Estrutura do repositório
+A **base** fica ligada na tomada de casa e hospeda uma página de configuração acessível pelo celular, onde a família cadastra cada cinto, o nome do idoso, a mensagem de alerta e quem deve recebê-la.
+
+Se a internet cair no momento do alerta, a base **guarda a ocorrência** e envia assim que a conexão voltar.
+
+---
+
+## Organização do repositório
 
 | Caminho | Conteúdo |
 |---|---|
-| `frontend/` | Interface de configuração do master (M1.1) — HTML/CSS/JS puro, servido do LittleFS |
-| `master/main.cpp` | Firmware do master (protótipo: SoftAP, portal cativo, ESP-NOW, Telegram) |
-| `docs/CONTEXTO.md` | Fonte única de verdade: arquitetura, hardware, cronograma, conflitos em aberto |
-| `docs/CLAUDE.md` | Regras de trabalho e fatos técnicos que não podem ser contrariados |
-| `docs/master/FRONTEND_CONFIG.md` | Especificação da interface de configuração e contrato da API |
-| `.claude/skills/frontend-master/` | Regras e checklist para mexer no `frontend/` |
+| [master/](master/) | Projeto PlatformIO do master ESP32-S3 |
+| [master/include/](master/include/) e [master/src/](master/src/) | Cabeçalhos e implementações C++, agrupados por responsabilidade |
+| [master/frontend/](master/frontend/) | Interface HTML/CSS/JS independente, ainda com dados simulados |
+| [master/test/](master/test/) | Testes Unity dos componentes existentes |
+| [master/prototypes/](master/prototypes/) | Experimentos fora da compilação do firmware |
+| `docs/` | Documentos do projeto |
 
-## Front end de configuração (`frontend/`)
+Consulte o [guia do master](master/README.md) para compilar componentes, executar
+testes e abrir a interface localmente. A hospedagem do frontend no ESP32 e sua
+conexão com as APIs ainda serão implementadas.
 
-Interface onde o cuidador associa cada cinto (identificado pelo MAC que aparece após o
-pareamento) a um nome, uma mensagem de alerta e um destinatário no Telegram.
+---
 
-Restrições: sem recursos externos (o celular fica na SoftAP do master, sem internet), sem
-framework, sem etapa de build, menos de 100 KB. Ver
-[`docs/master/FRONTEND_CONFIG.md`](docs/master/FRONTEND_CONFIG.md).
+## O que este projeto não é
 
-### Rodar localmente
+> [!WARNING]
+> **Não é um dispositivo médico.** É um protótipo acadêmico, sem validação clínica nem certificação regulatória.
 
-```bash
-cd frontend
-python -m http.server 8000    # ou: python3 -m http.server 8000
-# abrir http://localhost:8000
-```
+- Os dados de treino vêm de quedas simuladas por adultos jovens e saudáveis. Quedas reais de pessoas idosas são diferentes — mais lentas, com menos reflexo de proteção, sobre piso duro.
+- Depende de energia elétrica na casa, internet funcionando e um cuidador com celular acessível.
+- **Não substitui presença humana.** Reduz o tempo até o socorro; não elimina o risco de cair.
 
-`app.js` começa com `const MOCK = true`: todas as chamadas são atendidas por `mock.js`
-(dados falsos, latência simulada, um cinto pendente novo aparece após ~15 s). `mock.js` é só
-para desenvolvimento — **não** vai para `firmware-master/data/`. O deploy no LittleFS é
-`index.html` + `style.css` + `app.js`.
+---
 
-## Firmware
+<div align="center">
 
-O firmware do master está em `master/main.cpp`, hoje compilado pela Arduino IDE (biblioteca
-ArduinoJson). O sistema de pareamento cinto↔master via ESP-NOW (M1.4) e o firmware do cinto
-ainda não foram implementados.
+## A equipe
 
-## Cronograma
+Projeto desenvolvido para a disciplina de **Oficinas de Integração 2**
+Engenharia de Computação · Universidade Tecnológica Federal do Paraná
 
-| Milestone | Tema | Prazo |
-|---|---|---|
-| M1 | Infraestrutura web e comunicação | 07/10/2026 |
-| M2 | Eletrônica, energia e machine learning | 11/11/2026 |
-| M3 | Prototipagem e testes finais | 25/11/2026 |
-| M4 | Entrega final (relatório, vídeo, blog) | 02/12/2026 |
-| M5 | Apresentação para a banca | 09/12/2026 |
+**Rafael de Andrade Fernandes** · **Arthur Gabriel Pellegrini Heberle** · **Vinícius Romualdo Silva**
+
+<br>
+
+*Curitiba, PR · 2026*
+
+</div>

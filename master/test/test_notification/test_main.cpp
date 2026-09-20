@@ -1,24 +1,24 @@
-// Unit tests for the pure in-memory QueuedNotification state object.
+// Unit tests for the pure in-memory Notification state object.
 // No flash/LittleFS access here — see test_call_queue_storage for persistence and the power-loss simulation.
-// Run with: pio test -e esp32-s3-devkitc-1-test -f test_queued_notification
+// Run with: pio test -e esp32-s3-devkitc-1-test -f test_notification
 
 #include <Arduino.h>
 #include <unity.h>
 #include <vector>
 
-#include "Domain/QueuedNotification.h"
+#include "Domain/Notification.h"
 
 namespace {
 
-QueuedNotification makeNotification() {
+Notification makeNotification() {
     std::vector<String> phones = {"11111111111", "22222222222", "33333333333"};
-    return QueuedNotification("evt123", 1700000000, "AA:BB:CC:DD:EE:FF", "Fall alert", phones);
+    return Notification("evt123", 1700000000, "AA:BB:CC:DD:EE:FF", "Fall alert", phones);
 }
 
 } // namespace
 
 void test_constructor_stores_all_fields() {
-    QueuedNotification n = makeNotification();
+    Notification n = makeNotification();
 
     TEST_ASSERT_EQUAL_STRING("evt123", n.getEventId().c_str());
     TEST_ASSERT_EQUAL_UINT32(1700000000, n.getTimestamp());
@@ -29,7 +29,7 @@ void test_constructor_stores_all_fields() {
 }
 
 void test_mark_phone_as_sent_removes_only_that_phone() {
-    QueuedNotification n = makeNotification();
+    Notification n = makeNotification();
 
     n.markPhoneAsSent("22222222222");
 
@@ -39,7 +39,7 @@ void test_mark_phone_as_sent_removes_only_that_phone() {
 }
 
 void test_mark_phone_as_sent_ignores_unknown_phone() {
-    QueuedNotification n = makeNotification();
+    Notification n = makeNotification();
 
     n.markPhoneAsSent("00000000000"); // was never pending
 
@@ -47,7 +47,7 @@ void test_mark_phone_as_sent_ignores_unknown_phone() {
 }
 
 void test_is_completed_becomes_true_once_every_phone_is_marked() {
-    QueuedNotification n = makeNotification();
+    Notification n = makeNotification();
 
     n.markPhoneAsSent("11111111111");
     TEST_ASSERT_FALSE(n.isCompleted());
@@ -60,19 +60,19 @@ void test_is_completed_becomes_true_once_every_phone_is_marked() {
 }
 
 void test_default_constructed_notification_is_completed() {
-    QueuedNotification n;
+    Notification n;
     TEST_ASSERT_TRUE(n.isCompleted());
     TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(n.getPendingPhones().size()));
 }
 
 void test_make_event_id_strips_colons_and_appends_timestamp() {
-    String id = QueuedNotification::makeEventId("AA:BB:CC:DD:EE:FF", 1700000000);
+    String id = Notification::makeEventId("AA:BB:CC:DD:EE:FF", 1700000000);
     TEST_ASSERT_EQUAL_STRING("AABBCCDDEEFF_1700000000", id.c_str());
 }
 
 void test_make_event_id_differs_for_different_timestamps() {
-    String idA = QueuedNotification::makeEventId("AA:BB:CC:DD:EE:FF", 1);
-    String idB = QueuedNotification::makeEventId("AA:BB:CC:DD:EE:FF", 2);
+    String idA = Notification::makeEventId("AA:BB:CC:DD:EE:FF", 1);
+    String idB = Notification::makeEventId("AA:BB:CC:DD:EE:FF", 2);
     TEST_ASSERT_FALSE(idA.equals(idB));
 }
 

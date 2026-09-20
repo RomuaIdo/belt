@@ -4,9 +4,9 @@
 
 namespace {
 
-// Attempts to reconstruct a QueuedNotification from a queue file's raw
+// Attempts to reconstruct a Notification from a queue file's raw
 // content.
-bool tryParseNotification(File& entry, QueuedNotification& out) {
+bool tryParseNotification(File& entry, Notification& out) {
     JsonDocument doc;
     if (deserializeJson(doc, entry)) return false;
 
@@ -24,7 +24,7 @@ bool tryParseNotification(File& entry, QueuedNotification& out) {
         if (phone) pendingPhones.emplace_back(phone);
     }
 
-    out = QueuedNotification(eventId, timestamp, originMac, message, pendingPhones);
+    out = Notification(eventId, timestamp, originMac, message, pendingPhones);
     return true;
 }
 
@@ -40,7 +40,7 @@ String CallQueueStorage::pathFor(const String& eventId) const {
     return queueDirPath + "/evt_" + eventId + ".json";
 }
 
-bool CallQueueStorage::writeToFile(const QueuedNotification& notification) const {
+bool CallQueueStorage::writeToFile(const Notification& notification) const {
     JsonDocument doc;
     doc["eventId"] = notification.getEventId();
     doc["timestamp"] = notification.getTimestamp();
@@ -59,11 +59,11 @@ bool CallQueueStorage::writeToFile(const QueuedNotification& notification) const
     return ok;
 }
 
-bool CallQueueStorage::enqueue(const QueuedNotification& notification) const {
+bool CallQueueStorage::enqueue(const Notification& notification) const {
     return writeToFile(notification);
 }
 
-bool CallQueueStorage::updatePending(const QueuedNotification& notification) const {
+bool CallQueueStorage::updatePending(const Notification& notification) const {
     // Same on-disk representation as enqueue(): overwrite the event's file
     // with the new (shorter) pendingPhones list. Deciding when an event is
     // done and should be removed instead is the caller's job (see
@@ -77,8 +77,8 @@ bool CallQueueStorage::remove(const String& eventId) const {
     return LittleFS.remove(path);
 }
 
-std::vector<QueuedNotification> CallQueueStorage::loadAllPending() const {
-    std::vector<QueuedNotification> result;
+std::vector<Notification> CallQueueStorage::loadAllPending() const {
+    std::vector<Notification> result;
 
     File dir = LittleFS.open(queueDirPath);
     if (!dir || !dir.isDirectory()) return result;
@@ -86,7 +86,7 @@ std::vector<QueuedNotification> CallQueueStorage::loadAllPending() const {
     File entry = dir.openNextFile();
     while (entry) {
         if (!entry.isDirectory()) {
-            QueuedNotification notification;
+            Notification notification;
             if (tryParseNotification(entry, notification) && !notification.isCompleted()) {
                 result.push_back(notification);
             }
@@ -111,7 +111,7 @@ size_t CallQueueStorage::purgeInvalidEntries() const {
     while (entry) {
         if (!entry.isDirectory()) {
             String path = entry.path();
-            QueuedNotification notification;
+            Notification notification;
             bool parsed = tryParseNotification(entry, notification);
 
             if (!parsed) {

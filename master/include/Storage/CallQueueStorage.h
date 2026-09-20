@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include <vector>
-#include "Domain/QueuedNotification.h"
+#include "Domain/Notification.h"
 
 // Power-loss-safe storage: persists pending events as individual JSON files on
 // LittleFS to prevent data loss or duplicate retries across reboots.
@@ -11,11 +11,11 @@ class CallQueueStorage {
 public:
     explicit CallQueueStorage(String queueDirPath);
 
-    bool enqueue(const QueuedNotification& notification) const;
-    bool updatePending(const QueuedNotification& notification) const;
+    bool enqueue(const Notification& notification) const;
+    bool updatePending(const Notification& notification) const;
     bool remove(const String& eventId) const;
 
-    std::vector<QueuedNotification> loadAllPending() const;
+    std::vector<Notification> loadAllPending() const;
     size_t getQueueSize() const;
 
     // Purges unprocessable queue files: corrupted/truncated ones and fully delivered
@@ -27,5 +27,5 @@ private:
     String queueDirPath;
 
     String pathFor(const String& eventId) const;
-    bool writeToFile(const QueuedNotification& notification) const;
+    bool writeToFile(const Notification& notification) const;
 };
