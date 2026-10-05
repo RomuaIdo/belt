@@ -3,24 +3,25 @@
 #include <Arduino.h>
 #include <vector>
 
-
-// Domain model (class) representing an authorized remote ESP sensor (slave) node
-
+// Domain model representing an authorized remote ESP sensor (belt) node.
 class PeerNode {
 public:
     PeerNode() = default;
     PeerNode(String macAddress, String alias);
 
-    void addPhone(const String& phone);
-    void removePhone(const String& phone);
+    void addChatId(const String& chatId);
+    void removeChatId(const String& chatId);
 
-    const std::vector<String>& getPhones() const { return phoneNumbers; }
+    const std::vector<String>& getChatIds() const { return chatIds; }
     const String& getMacAddress() const { return macAddress; }
     const String& getAlias() const { return alias; }
     void setAlias(const String& newAlias) { alias = newAlias; }
+    const String& getMessage() const { return message; }
+    void setMessage(const String& newMessage) { message = newMessage; }
 
 private:
     String macAddress;
     String alias;
-    std::vector<String> phoneNumbers;
+    String message;
+    std::vector<String> chatIds;
 };
