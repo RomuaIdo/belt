@@ -1,165 +1,172 @@
 <div align="center">
 
-# 🔔 Cinto Alerta
+# Cinto Alerta
 
-### Um cinto que percebe a queda de um idoso e chama socorro sozinho
+### A belt that detects elderly falls and automatically calls for help
 
-![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow)
-![Instituição](https://img.shields.io/badge/UTFPR-Engenharia%20de%20Computa%C3%A7%C3%A3o-blue)
-![Tecnologia](https://img.shields.io/badge/TinyML-ESP32--S3-orange)
+![Status](https://img.shields.io/badge/status-in%20development-yellow)
+![Institution](https://img.shields.io/badge/UTFPR-Engenharia%20de%20Computa%C3%A7%C3%A3o-blue)
+![Technology](https://img.shields.io/badge/TinyML-ESP32--S3-orange)
 
 </div>
 
 ---
 
-## O problema não é a queda. É o tempo no chão.
+## The problem is not the fall. It is the time spent on the floor.
 
-Quedas estão entre as principais causas de lesão e de perda de autonomia em pessoas idosas. Mas o que determina a gravidade não é apenas o impacto — é **quanto tempo a pessoa fica sem atendimento**.
+Falls are among the leading causes of injury and loss of autonomy in elderly people. But what determines severity is not just the impact — it is **how long the person remains unattended**.
 
-Quem cai sozinho em casa e não consegue se levantar pode passar horas no chão. Nesse intervalo, lesões se agravam e o risco de complicações sobe.
+Someone who falls alone at home and cannot get up may spend hours on the floor. During this interval, injuries worsen and the risk of complications rises.
 
-A resposta óbvia — "ela liga para alguém" — falha exatamente quando é mais necessária. Se houve desmaio, fratura de quadril ou o celular ficou em outro cômodo, não há ligação nenhuma.
+The obvious answer — "they can call someone" — fails precisely when it is needed most. If there is loss of consciousness, a hip fracture, or the phone was left in another room, no call is made.
 
 ---
 
-## Como funciona
+## How it works
 
-O fluxo abaixo descreve o funcionamento previsto. A integração do firmware ainda
-está em desenvolvimento; veja o estado atual e os comandos no [guia do master](master/README.md).
+The flow below describes the expected operation. Firmware integration is still in progress; see the current state and commands in the [master guide](master/README.md).
 
-<div align="center">
-
-```mermaid
-flowchart LR
-    A["🚶 Queda<br/>detectada"] --> B["📳 Cinto vibra<br/>e acende o LED"]
-    B --> C{"Usuário<br/>cancela?"}
-    C -->|Sim| D["✅ Alarme<br/>descartado"]
-    C -->|Não| E["📡 Alerta enviado<br/>para a base"]
-    E --> F["💬 Cuidador recebe<br/>no Telegram"]
+```text
++-----------------+      +-------------------+
+|      Fall       | ---> | Belt vibrates and |
+|    detected     |      | turns on the LED  |
++-----------------+      +-------------------+
+                                   |
+                                   v
+                         /-------------------\
+                        <    User cancels?    >
+                         \-------------------/
+                              /         \
+                        Yes  /           \  No
+                            v             v
+                     +------------+  +-------------------+
+                     |   Alarm    |  |   Alert sent to   |
+                     | discarded  |  |     the base      |
+                     +------------+  +-------------------+
+                                               |
+                                               v
+                                     +-------------------+
+                                     | Caregiver receives|
+                                     |    on Telegram    |
+                                     +-------------------+
 ```
 
-</div>
+The belt detects falls on its own, using a motion sensor and an artificial intelligence model that runs **on the device itself** — without internet, without cloud, without sending data anywhere.
 
-O cinto detecta a queda por conta própria, usando um sensor de movimento e um modelo de inteligência artificial que roda **dentro do próprio dispositivo** — sem internet, sem nuvem, sem enviar dados para lugar nenhum.
-
-Se o usuário estiver bem, um toque no botão cancela. Se não houver resposta, o alerta segue para o celular de um familiar ou cuidador.
+If the user is fine, a press of the button cancels the alert. If there is no response, the alert is sent to a family member or caregiver's phone.
 
 ---
 
-## O que o dispositivo faz
+## What the device does
 
-| | |
-|:--:|:--|
-| 🎯 | **Detecta quedas automaticamente** — sem depender de a pessoa apertar nada |
-| 📳 | **Avisa antes de alarmar** — vibração e LED dão alguns segundos para cancelar |
-| 🆘 | **Botão de socorro manual** — para mal-estar, dor ou confusão, que nenhum sensor detecta |
-| 💬 | **Notifica pelo Telegram** — mensagem personalizável para cada cuidador |
-| 🔋 | **Avisa quando a bateria está acabando** — antes de ficar desprotegido |
-| 📶 | **Funciona sem depender do Wi-Fi da casa** — o cinto fala direto com a base |
-| ⚠️ | **Avisa se o próprio aparelho parar** — um dispositivo mudo não é confundido com "está tudo bem" |
+- **Detects falls automatically** — without relying on the person pressing anything
+- **Warns before sounding an alarm** — vibration and LED provide a few seconds to cancel
+- **Manual emergency button** — for malaise, pain, or confusion, which no motion sensor can detect
+- **Notifies via Telegram** — customizable message for each caregiver
+- **Warns when battery is low** — before leaving the user unprotected
+- **Works without relying on home Wi-Fi** — the belt communicates directly with the base
+- **Alerts if the device itself stops working** — a silent device is not mistaken for "everything is fine"
 
 ---
 
-## Decisões de projeto
+## Design decisions
 
 <details>
-<summary><b>Por que na cintura, e não no pulso?</b></summary>
+<summary><b>Why on the waist, and not on the wrist?</b></summary>
 
 <br>
 
-Foi a primeira decisão técnica do projeto, e talvez a mais importante.
+This was the first technical decision of the project, and perhaps the most important one.
 
-A ideia original era um smartwatch — mais moderno, mais aceitável socialmente. O problema é que **o pulso é a pior posição possível para detectar quedas**.
+The original idea was a smartwatch — more modern, socially more acceptable. The problem is that **the wrist is the worst possible location for fall detection**.
 
-O braço se move de forma independente do corpo. Bater a mão na mesa, aplaudir, escovar os dentes, tirar o relógio e apoiá-lo — tudo isso gera assinaturas muito parecidas com uma queda. O resultado é alarme falso constante, e um dispositivo que dá alarme falso todo dia é um dispositivo que o usuário desliga.
+The arm moves independently from the body. Hitting a hand on a table, applauding, brushing teeth, taking off the watch and putting it down — all of these produce motion signatures very similar to a fall. The result is constant false alarms, and a device that triggers false alarms every day is a device the user turns off.
 
-A cintura resolve isso porque **acompanha o centro de massa do corpo**: só se move de verdade quando o corpo inteiro se move.
+The waist solves this because **it follows the body's center of mass**: it only truly moves when the entire body moves.
 
 </details>
 
 <details>
-<summary><b>Por que existe uma janela de cancelamento?</b></summary>
+<summary><b>Why is there a cancellation window?</b></summary>
 
 <br>
 
-Detectar um impacto é fácil. Distinguir **"caiu"** de **"sentou rápido no sofá"** é o problema que a área ainda não resolveu bem.
+Detecting an impact is easy. Distinguishing **"fell down"** from **"sat down quickly on the couch"** is a challenge that the field has yet to solve reliably.
 
-A janela de cancelamento transforma um erro grave em um pequeno incômodo: sem ela, cada alarme falso é um susto na família; com ela, é um botão apertado.
+The cancellation window turns a critical false alarm into a minor inconvenience: without it, every false alarm startles the family; with it, it is just a button press.
 
-E tem um bônus — cada cancelamento é um exemplo real de "isso não era queda", que serve para melhorar o modelo.
+And there is a bonus — every cancellation is a real-world example of "this was not a fall", which can be used to improve the model.
 
 </details>
 
 <details>
-<summary><b>Por que o aparelho avisa quando ele mesmo para de funcionar?</b></summary>
+<summary><b>Why does the device warn when it stops functioning?</b></summary>
 
 <br>
 
-Um cinto com bateria descarregada, travado ou fora de alcance é **indistinguível de um idoso que está bem** — nos dois casos o sistema fica em silêncio.
+A belt with a dead battery, frozen, or out of range is **indistinguishable from an elderly person who is doing fine** — in both cases, the system remains silent.
 
-Um sistema de segurança cujo modo de falha é "não avisar nada" não é um sistema de segurança. Por isso o cinto envia sinais periódicos de "estou aqui", e a base avisa o cuidador se eles pararem de chegar — com uma mensagem diferente, deixando claro que o problema é o aparelho, não a pessoa.
+A safety system whose failure mode is "notify nothing" is not a safety system. For this reason, the belt sends periodic heartbeat signals, and the base notifies the caregiver if they stop arriving — with a distinct message, clarifying that the issue is with the device, not the person.
 
 </details>
 
 ---
 
-## O sistema
+## System architecture
 
-<div align="center">
-
-```mermaid
-flowchart LR
-    A["👤 CINTO<br/>sensor de movimento<br/>IA embarcada<br/>bateria"]
-    B["🏠 BASE<br/>ligada à tomada<br/>página de configuração"]
-    C["💬 Telegram"]
-    D["📱 Cuidador"]
-
-    A -->|rádio direto| B
-    B -->|internet| C
-    C --> D
+```text
++-----------------------+                    +-----------------------+
+|         BELT          |                    |         BASE          |
+|   Motion sensor       |    Direct radio    |   Wall-powered        |
+|   Embedded AI         | -----------------> |   Configuration page  |
+|   Battery             |      (ESP-NOW)     |                       |
++-----------------------+                    +-----------------------+
+                                                         |
+                                                         | Internet
+                                                         v
++-----------------------+                    +-----------------------+
+|       Caregiver       | <----------------- |       Telegram        |
+|  (Smartphone alert)   |                    +-----------------------+
++-----------------------+
 ```
 
-</div>
+The **base** stays plugged into a wall outlet at home and hosts a configuration page accessible via smartphone, where the family registers each belt, the elderly person's name, the alert message, and who should receive it.
 
-A **base** fica ligada na tomada de casa e hospeda uma página de configuração acessível pelo celular, onde a família cadastra cada cinto, o nome do idoso, a mensagem de alerta e quem deve recebê-la.
-
-Se a internet cair no momento do alerta, a base **guarda a ocorrência** e envia assim que a conexão voltar.
+If the internet connection is down when an alert occurs, the base **stores the occurrence in a persistent queue** and dispatches it as soon as the connection is restored.
 
 ---
 
-## Organização do repositório
+## Repository organization
 
-| Caminho | Conteúdo |
+| Path | Content |
 |---|---|
-| [master/](master/) | Projeto PlatformIO do master ESP32-S3 |
-| [master/include/](master/include/) e [master/src/](master/src/) | Cabeçalhos e implementações C++, agrupados por responsabilidade |
-| [master/frontend/](master/frontend/) | Interface HTML/CSS/JS independente, ainda com dados simulados |
-| [master/test/](master/test/) | Testes Unity dos componentes existentes |
-| [master/prototypes/](master/prototypes/) | Experimentos fora da compilação do firmware |
-| `docs/` | Documentos do projeto |
+| [master/](master/) | PlatformIO project for the ESP32-S3 master |
+| [master/include/](master/include/) and [master/src/](master/src/) | C++ headers and implementations, organized by responsibility |
+| [master/frontend/](master/frontend/) | Standalone HTML/CSS/JS interface, currently with mock data |
+| [master/test/](master/test/) | Unity unit and integration tests |
+| [master/prototypes/](master/prototypes/) | Experiments kept outside firmware builds |
+| `docs/` | Project documentation |
 
-Consulte o [guia do master](master/README.md) para compilar componentes, executar
-testes e abrir a interface localmente. A hospedagem do frontend no ESP32 e sua
-conexão com as APIs ainda serão implementadas.
+Refer to the [master guide](master/README.md) to build components, run tests, and open the interface locally.
 
 ---
 
-## O que este projeto não é
+## What this project is not
 
 > [!WARNING]
-> **Não é um dispositivo médico.** É um protótipo acadêmico, sem validação clínica nem certificação regulatória.
+> **This is not a medical device.** It is an academic prototype without clinical validation or regulatory certification.
 
-- Os dados de treino vêm de quedas simuladas por adultos jovens e saudáveis. Quedas reais de pessoas idosas são diferentes — mais lentas, com menos reflexo de proteção, sobre piso duro.
-- Depende de energia elétrica na casa, internet funcionando e um cuidador com celular acessível.
-- **Não substitui presença humana.** Reduz o tempo até o socorro; não elimina o risco de cair.
+- Training data comes from simulated falls performed by healthy young adults. Real falls in elderly people are different — slower, with fewer protective reflexes, landing on hard surfaces.
+- Relies on electrical power in the home, a working internet connection, and a caregiver with an accessible smartphone.
+- **Does not replace human presence.** It reduces the time until help arrives; it does not eliminate the risk of falling.
 
 ---
 
 <div align="center">
 
-## A equipe
+## Team
 
-Projeto desenvolvido para a disciplina de **Oficinas de Integração 2**
+Project developed for the **Oficinas de Integração 2** course
 Engenharia de Computação · Universidade Tecnológica Federal do Paraná
 
 **Rafael de Andrade Fernandes** · **Arthur Gabriel Pellegrini Heberle** · **Vinícius Romualdo Silva**

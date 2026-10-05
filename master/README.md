@@ -1,120 +1,118 @@
 # Master
 
-Projeto PlatformIO com framework Arduino para o ESP32-S3-DevKitC-1
-(N16R8: 16 MB de flash e 8 MB de PSRAM).
+PlatformIO project using Arduino framework for the ESP32-S3-DevKitC-1
+(N16R8: 16 MB flash and 8 MB PSRAM).
 
-## Organização
+## Organization
 
-| Diretório | Responsabilidade |
+| Directory | Responsibility |
 |---|---|
-| `include/App/` e `src/App/` | `AppController`, que coordena Wi-Fi, fila de alertas, envios ao Telegram e a página de configuração |
-| `include/Domain/` e `src/Domain/` | Modelos de configuração, dispositivos e notificações |
-| `include/Messaging/` e `src/Messaging/` | `TelegramTask` (envio pelo Telegram em uma task FreeRTOS) e formatação da mensagem de alerta |
-| `include/Storage/` e `src/Storage/` | Persistência da configuração e da fila no LittleFS |
-| `include/Web/` e `src/Web/` | `WebPortal`: servidor web da página de configuração e a API que ela usa |
-| `include/Util/` | Utilitários compartilhados, como normalização de MAC e validade do relógio |
-| `src/main.cpp` | Entrada do firmware: `setup()` e `loop()` |
-| [frontend/](frontend/) | Página de configuração em HTML, CSS e JavaScript, gravada no LittleFS |
-| [test/](test/) | Suítes Unity existentes, organizadas por componente |
-| [prototypes/](prototypes/) | Experimentos independentes, fora da compilação do firmware |
+| `include/App/` and `src/App/` | `AppController`, coordinating Wi-Fi, alert queue, Telegram delivery, and the configuration portal |
+| `include/Domain/` and `src/Domain/` | Domain models for configuration, devices, and notifications |
+| `include/Messaging/` and `src/Messaging/` | `TelegramTask` (Telegram delivery via FreeRTOS task) and alert message formatting |
+| `include/Storage/` and `src/Storage/` | Configuration and call queue persistence in LittleFS |
+| `include/Web/` and `src/Web/` | `WebPortal`: configuration web server and API |
+| `include/Util/` | Shared utilities, such as MAC address formatting and clock synchronization check |
+| `src/main.cpp` | Firmware entry point: `setup()` and `loop()` |
+| [frontend/](frontend/) | Configuration web page in HTML, CSS, and JavaScript, stored in LittleFS |
+| [test/](test/) | Unity test suites, organized by component |
+| [prototypes/](prototypes/) | Independent experiments, excluded from firmware compilation |
 
-Arquivos `.h` ficam em `include/` e suas implementações `.cpp` em `src/`,
-com o mesmo subdiretório e nome-base. Por exemplo,
-`include/Messaging/TelegramTask.h` corresponde a `src/Messaging/TelegramTask.cpp`.
-Os includes usam o caminho a partir de `include/`: `Messaging/TelegramTask.h`.
-Utilitários implementados inteiramente no cabeçalho não precisam de um `.cpp`.
+Header files (`.h`) reside in `include/` and their implementations (`.cpp`) in `src/`,
+using matching subdirectories and base names. For example,
+`include/Messaging/TelegramTask.h` corresponds to `src/Messaging/TelegramTask.cpp`.
+Include directives use paths relative to `include/`: `Messaging/TelegramTask.h`.
+Header-only utilities do not require a `.cpp` file.
 
-## Estado atual
+## Current status
 
 `AppController` (`src/App/AppController.cpp`):
 
-- `setup()` monta o LittleFS, carrega a configuração, abre a fila em `/queue`
-  (removendo arquivos inválidos), cria a rede Wi-Fi própria da master, liga o
-  servidor web e conecta no Wi-Fi salvo (modo AP+STA).
-- `execute()`, chamado por `loop()`, atende a página de configuração, mantém o Wi-Fi
-  e o relógio (NTP, fuso UTC-3), coleta os envios concluídos e despacha os pendentes
-  ao Telegram em tarefas FreeRTOS (no máximo 2 simultâneas). O certificado raiz fica
-  em `include/Messaging/telegram_certificate.h`.
-- `enqueueAlert(mac)` é o ponto de entrada para um alerta de cinto: formata a
-  mensagem do peer, grava na fila e o envio ocorre em `execute()`. Falhas de rede e
-  5xx/429 são retentadas com backoff de 5 s a 5 min; HTTP 400/403 descarta aquele chat.
+- `setup()` mounts LittleFS, loads configuration, opens the queue in `/queue`
+  (purging invalid files), sets up the master's own Wi-Fi network, starts the web
+  server, and connects to saved Wi-Fi (AP+STA mode).
+- `execute()`, called by `loop()`, handles configuration page requests, maintains Wi-Fi
+  and system clock (NTP, UTC-3 timezone), collects completed sends, and dispatches pending
+  alerts to Telegram via FreeRTOS tasks (up to 2 concurrent). The root CA certificate
+  is located in `include/Messaging/telegram_certificate.h`.
+- `enqueueAlert(mac)` is the entry point for belt alerts: formats the peer message,
+  writes it to the queue, and delivery is processed in `execute()`. Network errors and
+  5xx/429 HTTP statuses retry with backoff from 5 s to 5 min; HTTP 400/403 drops that chat.
 
-Nada ainda chama `enqueueAlert()`: o recebimento ESP-NOW e o pareamento dependem de
-integração. Por isso a lista "Waiting to be set up" da página fica sempre vazia, e os
-cintos são cadastrados pelo botão "Add belt manually".
+Belt registration is currently performed via the "Add belt manually" button on the web portal.
 
-## Configurar a master pelo celular
+## Setting up the master via smartphone
 
-A configuração (Wi-Fi, token do Telegram, cintos) fica no `/config.json` do LittleFS e
-é carregada a cada boot: depois de configurada, a master volta a conectar sozinha.
+Configuration (Wi-Fi, Telegram token, belts) is stored in `/config.json` on LittleFS and
+loaded on every boot: once configured, the master reconnects automatically.
 
-**1. Gravar a página e o firmware** (placa na porta USB marcada `UART`; a partir de `master/`):
+**1. Flash the web portal and firmware** (board connected to USB port marked `UART`; from `master/`):
 
 ```sh
-pio run -e esp32-s3-devkitc-1 -t uploadfs   # grava frontend/ no LittleFS
-pio run -e esp32-s3-devkitc-1 -t upload     # grava o firmware
-pio device monitor                           # serial a 115200
+pio run -e esp32-s3-devkitc-1 -t uploadfs   # writes frontend/ to LittleFS
+pio run -e esp32-s3-devkitc-1 -t upload     # flashes firmware
+pio device monitor                           # serial monitor at 115200 baud
 ```
 
-> `uploadfs` **apaga o LittleFS inteiro**, inclusive o `config.json` e a fila de alertas.
-> Rode só quando a página (`frontend/`) mudar; para trocar apenas o firmware use `upload`.
+> `uploadfs` **erases the entire LittleFS partition**, including `config.json` and the alert queue.
+> Run only when `frontend/` changes; to update only firmware, use `upload`.
 
-No monitor deve aparecer `rede 'CintoAlerta-Master' criada; pagina em http://192.168.4.1`.
+The serial monitor should display `rede 'CintoAlerta-Master' criada; pagina em http://192.168.4.1`.
 
-**2. Abrir a página.** No celular, conecte na rede Wi-Fi `CintoAlerta-Master`
-(senha `cintoalerta`, definida em `src/App/AppController.cpp`) e abra
-<http://192.168.4.1>. A rede da master fica sempre ligada, mesmo depois de ela
-conectar no roteador. Sem Wi-Fi ou sem token, a página abre direto em **Settings**.
+**2. Open the page.** On your smartphone, connect to the Wi-Fi network `CintoAlerta-Master`
+(password `cintoalerta`, defined in `src/App/AppController.cpp`) and open
+<http://192.168.4.1>. The master's AP remains active even after connecting to the home router.
+Without Wi-Fi or bot token configured, the page opens directly on **Settings**.
 
-**3. Wi-Fi.** Em Settings, "Search networks", escolha a rede de **2,4 GHz** da casa
-(o ESP32 não usa 5 GHz), digite a senha e "Connect". O celular pode perder o sinal da
-master por 1 ou 2 s quando o canal muda.
+**3. Wi-Fi.** In Settings, tap "Search networks", select the home **2.4 GHz** network
+(the ESP32 does not support 5 GHz), enter the password, and tap "Connect". The phone may lose
+connection to the master for 1-2 seconds when the Wi-Fi channel switches.
 
-**4. Telegram.** No Telegram, fale com `@BotFather`, envie `/newbot` e copie o token.
-Na página, cole o token, "Test" (a master consulta o Telegram e mostra o nome do bot) e "Save".
+**4. Telegram.** In Telegram, open `@BotFather`, send `/newbot`, and copy the token.
+On the web page, paste the token, tap "Test" (the master queries Telegram and displays the bot username), and tap "Save".
 
-**5. Cintos.** Na tela inicial, "Add belt manually" e digite o MAC. No formulário:
-peça à pessoa que abra o bot no Telegram e aperte **Start**, depois use
-**Find conversations** e marque quem recebe os alertas. **Send test** manda uma
-mensagem de verdade para os marcados; **Save** grava no `config.json`.
+**5. Belts.** On the home screen, tap "Add belt manually" and enter the MAC address. In the form:
+ask the user to open the bot in Telegram and press **Start**, then use
+**Find conversations** and select who receives alerts. **Send test** dispatches an actual
+test message to selected chats; **Save** writes to `config.json`.
 
-Se alguém não aparecer em "Find conversations", o Telegram só guarda as mensagens por
-24 h: peça para a pessoa mandar outra mensagem ao bot.
+If a chat does not appear in "Find conversations", Telegram retains update history for
+up to 24 hours: ask the person to send a new message to the bot.
 
-## Compilar e testar
+## Building and testing
 
-Execute a partir de `master/`, em um terminal com PlatformIO disponível.
+Run from `master/` in a terminal with PlatformIO installed.
 
 ```sh
-# Compilação do firmware completo.
+# Full firmware compilation
 pio run -e esp32-s3-devkitc-1
 
-# Compilar a suíte de Telegram sem enviar ou executar na placa.
+# Compile Telegram test suite without flashing or running on board
 pio test -e esp32-s3-devkitc-1-test -f test_telegram_task --without-uploading --without-testing
 
-# Enviar e executar uma suíte na placa conectada.
+# Flash and execute a test suite on a connected board
 pio test -e esp32-s3-devkitc-1-test -f test_telegram_task
 ```
 
-As outras suítes são `test_alert_message`, `test_domain_models`, `test_notification`,
-`test_config_storage`, `test_call_queue_storage` e `test_board_specs`.
-Use o nome correspondente com `-f`. Os testes de persistência escrevem na flash;
-os testes de reinicialização exigem uma placa e conexão serial compatíveis.
+Other available test suites: `test_alert_message`, `test_domain_models`, `test_notification`,
+`test_config_storage`, `test_call_queue_storage`, and `test_board_specs`.
+Use the corresponding name with `-f`. Persistence tests write to flash; reboot tests
+require a compatible development board and serial connection.
 
-O ambiente de testes seleciona `Domain/`, `Storage/` e `Messaging/`, sem compilar
-`src/main.cpp`, `App/` nem `Web/`. Código em `prototypes/` não entra em nenhum desses ambientes.
+The test environment selects `Domain/`, `Storage/`, and `Messaging/`, without compiling
+`src/main.cpp`, `App/`, or `Web/`. Code in `prototypes/` is excluded from all build environments.
 
-## Visualizar o frontend sem a placa
+## Previewing the frontend without hardware
 
-A partir de `master/`:
+From `master/`:
 
 ```sh
 python -m http.server 8000 --bind 127.0.0.1 --directory frontend
 ```
 
-Abra <http://localhost:8000/?mock>. O `?mock` carrega `mock.js`, que simula a API do
-firmware (`src/Web/WebPortal.cpp`) sem ESP32 nem chamadas reais ao Telegram. Sem o
-`?mock`, a página fala com a API real. A master só serve `index.html`, `style.css` e
-`app.js`; o `mock.js` vai para a flash junto com a pasta, mas não é entregue.
+Open <http://localhost:8000/?mock>. The `?mock` parameter loads `mock.js`, simulating the firmware
+API (`src/Web/WebPortal.cpp`) without an ESP32 or actual Telegram calls. Without `?mock`,
+the page connects to the live firmware API. The master serves only `index.html`, `style.css`,
+and `app.js`; `mock.js` is stored on flash along with the folder, but not served.
 
-Essa prévia local não grava configuração no master.
+This local preview does not persist configuration to the master.
