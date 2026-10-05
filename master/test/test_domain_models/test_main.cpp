@@ -8,24 +8,30 @@
 #include "Domain/PeerNode.h"
 #include "Domain/SystemConfig.h"
 
-void test_peernode_add_phone_avoids_duplicates() {
+void test_peernode_add_chat_avoids_duplicates() {
     PeerNode peer("AA:BB:CC:DD:EE:FF", "Test");
-    peer.addPhone("111111111");
-    peer.addPhone("111111111"); // duplicate, must be ignored
-    peer.addPhone("222222222");
+    peer.addChatId("-1001234567890");
+    peer.addChatId("-1001234567890"); // duplicate, must be ignored
+    peer.addChatId("5000000000");
 
-    TEST_ASSERT_EQUAL_UINT32(2, static_cast<uint32_t>(peer.getPhones().size()));
+    TEST_ASSERT_EQUAL_UINT32(2, static_cast<uint32_t>(peer.getChatIds().size()));
+    TEST_ASSERT_EQUAL_STRING("-1001234567890", peer.getChatIds()[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("5000000000", peer.getChatIds()[1].c_str());
 }
 
-void test_peernode_remove_phone() {
+void test_peernode_remove_chat() {
     PeerNode peer("AA:BB:CC:DD:EE:FF", "Test");
-    peer.addPhone("111111111");
-    peer.addPhone("222222222");
+    peer.addChatId("-1001234567890");
+    peer.addChatId("5000000000");
 
-    peer.removePhone("111111111");
+    peer.removeChatId("-1001234567890");
 
-    TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(peer.getPhones().size()));
-    TEST_ASSERT_EQUAL_STRING("222222222", peer.getPhones()[0].c_str());
+    TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(peer.getChatIds().size()));
+    TEST_ASSERT_EQUAL_STRING("5000000000", peer.getChatIds()[0].c_str());
+
+    peer.removeChatId("987654321");
+    TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(peer.getChatIds().size()));
+    TEST_ASSERT_EQUAL_STRING("5000000000", peer.getChatIds()[0].c_str());
 }
 
 void test_peernode_getters_and_alias() {
@@ -36,6 +42,14 @@ void test_peernode_getters_and_alias() {
 
     peer.setAlias("New Nickname");
     TEST_ASSERT_EQUAL_STRING("New Nickname", peer.getAlias().c_str());
+}
+
+void test_peernode_message_defaults_to_empty_and_can_be_set() {
+    PeerNode peer("AA:BB:CC:DD:EE:FF", "Nickname");
+    TEST_ASSERT_TRUE(peer.getMessage().isEmpty());
+
+    peer.setMessage("ALERT: {nome}");
+    TEST_ASSERT_EQUAL_STRING("ALERT: {nome}", peer.getMessage().c_str());
 }
 
 void test_systemconfig_add_and_find_peer() {
@@ -87,9 +101,10 @@ void setup() {
     delay(2000); // let the serial monitor attach before the first output
 
     UNITY_BEGIN();
-    RUN_TEST(test_peernode_add_phone_avoids_duplicates);
-    RUN_TEST(test_peernode_remove_phone);
+    RUN_TEST(test_peernode_add_chat_avoids_duplicates);
+    RUN_TEST(test_peernode_remove_chat);
     RUN_TEST(test_peernode_getters_and_alias);
+    RUN_TEST(test_peernode_message_defaults_to_empty_and_can_be_set);
     RUN_TEST(test_systemconfig_add_and_find_peer);
     RUN_TEST(test_systemconfig_find_peer_is_case_insensitive);
     RUN_TEST(test_systemconfig_rejects_duplicate_mac);
