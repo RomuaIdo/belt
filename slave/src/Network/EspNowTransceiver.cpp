@@ -42,6 +42,10 @@ bool EspNowTransceiver::send(const String& targetMac, const uint8_t* data, size_
     return esp_now_send(mac, data, len) == ESP_OK;
 }
 
+bool EspNowTransceiver::setChannel(uint8_t channel) {
+    return esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE) == ESP_OK;
+}
+
 void EspNowTransceiver::handleRxInterrupt(const uint8_t mac[6], const uint8_t* data, int len) {
     if (!onMessageReceived) return;
     onMessageReceived(MacUtils::format(mac), data, len);
