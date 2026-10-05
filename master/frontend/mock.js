@@ -1,56 +1,27 @@
-/* mock.js — dados falsos para desenvolver e demonstrar a interface sem o firmware.
-   NÃO é copiado para firmware-master/data/. Só é carregado quando MOCK = true. */
+/* mock.js — dados falsos para desenvolver e demonstrar a interface sem a master.
+   Só é carregado quando a página é aberta com ?mock na URL. Espelha a API do firmware
+   (src/Web/WebPortal.cpp). */
 
 const LATENCY = 300;
 
-const now = Date.now();
-const iso = (msAgo) => new Date(now - msAgo).toISOString();
+let wifi = { ssid: '', conectado: false, ip: '' };
+let telegramToken = '';
 
 let dispositivos = [
   {
     mac: 'A0:B7:65:2C:1D:E4',
-    nome_idoso: 'Maria Aparecida',
-    apelido: "Grandma Maria's belt",
-    telegram_chat_id: '987654321',
+    nome: 'Maria Aparecida',
     mensagem: 'ALERT: {nome} may have fallen. Detected at {hora} on {data}.',
-    ativo: true,
-    pareado_em: iso(1000 * 60 * 60 * 26),
-  },
-  {
-    mac: '34:85:18:0A:9F:02',
-    nome_idoso: 'João Batista',
-    apelido: '',
-    telegram_chat_id: '-1001445588',
-    mensagem: 'Fall alert for {nome} at {hora}. Battery {bateria}.',
-    ativo: false,
-    pareado_em: iso(1000 * 60 * 60 * 72),
+    chat_ids: ['987654321'],
   },
 ];
 
-let pendentes = [
-  { mac: 'C8:F0:9E:11:74:BB', recebido_em: iso(1000 * 60 * 4) },
+/* Quem já falou com o bot, como o getUpdates devolveria. */
+const conversas = [
+  { chat_id: '987654321', nome: 'Maria Aparecida' },
+  { chat_id: '123456789', nome: 'Arthur Heberle' },
+  { chat_id: '-1001445588', nome: 'Family group' },
 ];
-
-/* Depois de ~15 s aparece um novo pendente, simulando o botão de pareamento do cinto. */
-setTimeout(() => {
-  if (!pendentes.some((p) => p.mac === '9C:9C:1F:3D:20:57')
-      && !dispositivos.some((d) => d.mac === '9C:9C:1F:3D:20:57')) {
-    pendentes.push({ mac: '9C:9C:1F:3D:20:57', recebido_em: new Date().toISOString() });
-  }
-}, 15000);
-
-/* teste-telegram percorre os cinco resultados possíveis a cada chamada. */
-const TEST_CYCLE = ['ok', 'chat_desconhecido', 'sem_token', 'sem_internet', 'chat_id_invalido'];
-let testIndex = 0;
-
-/* PUT confirma com o cinto quase sempre; de vez em quando falha, para exercitar o aviso. */
-let putCount = 0;
-
-const config = () => ({
-  versao: 1,
-  atualizado_em: new Date().toISOString(),
-  dispositivos,
-});
 
 function delay(value) {
   return new Promise((resolve) => setTimeout(() => resolve(value), LATENCY));
@@ -60,22 +31,81 @@ function macFromPath(path, prefix) {
   return decodeURIComponent(path.slice(prefix.length)).toUpperCase();
 }
 
+const fail = (erro, mensagem) => ({ ok: false, erro, mensagem });
+
+/* Os resultados do Telegram só funcionam com Wi-Fi conectado e token salvo. */
+function telegramPrecondition(token) {
+  if (!token) return fail('sem_token', 'No token.');
+  if (!wifi.conectado) return fail('sem_internet', 'Not connected.');
+  return null;
+}
+
 export function mockApi(method, path, body) {
+  // GET /api/status
+  if (method === 'GET' && path === '/api/status') {
+    return delay({
+      wifi: { ...wifi },
+      telegram: { configurado: Boolean(telegramToken) },
+      relogio_ok: true,
+    });
+  }
+
+  // GET /api/wifi/redes
+  if (method === 'GET' && path === '/api/wifi/redes') {
+    return delay({
+      redes: [
+        { ssid: 'Casa-2G', rssi: -48, aberta: false },
+        { ssid: 'Vizinho', rssi: -71, aberta: false },
+        { ssid: 'Cafe-Livre', rssi: -80, aberta: true },
+      ],
+    });
+  }
+
+  // POST /api/wifi — a "senha errada" é simulada com a senha 12345678.
+  if (method === 'POST' && path === '/api/wifi') {
+    const wrong = body.senha === '12345678';
+    wifi = wrong
+      ? { ssid: body.ssid, conectado: false, ip: '' }
+      : { ssid: body.ssid, conectado: true, ip: '192.168.0.42' };
+    return delay({ ok: true });
+  }
+
+  // POST /api/telegram/testar-token — qualquer token com ":" funciona; "bad:..." é recusado.
+  if (method === 'POST' && path === '/api/telegram/testar-token') {
+    const token = (body && body.token) || '';
+    const pre = telegramPrecondition(token);
+    if (pre) return delay(pre);
+    if (!token.includes(':') || token.startsWith('bad')) {
+      return delay(fail('token_invalido', 'Invalid token.'));
+    }
+    return delay({ ok: true, bot: '@CintoAlertaBot' });
+  }
+
+  // PUT /api/telegram/token
+  if (method === 'PUT' && path === '/api/telegram/token') {
+    telegramToken = body.token;
+    return delay({ ok: true });
+  }
+
+  // GET /api/telegram/conversas
+  if (method === 'GET' && path === '/api/telegram/conversas') {
+    const pre = telegramPrecondition(telegramToken);
+    return delay(pre || { ok: true, conversas: conversas.map((c) => ({ ...c })) });
+  }
+
+  // POST /api/teste-telegram — o grupo recusa, para exercitar o aviso de erro.
+  if (method === 'POST' && path === '/api/teste-telegram') {
+    const pre = telegramPrecondition(telegramToken);
+    if (pre) return delay(pre);
+    if ((body && body.chat_id) === '-1001445588') {
+      return delay(fail('chat_desconhecido', 'Rejected.'));
+    }
+    return delay({ ok: true });
+  }
+
   // GET /api/dispositivos
   if (method === 'GET' && path === '/api/dispositivos') {
-    return delay({ dispositivos: dispositivos.map((d) => ({ ...d })) });
-  }
-
-  // GET /api/pendentes
-  if (method === 'GET' && path === '/api/pendentes') {
-    const macs = new Set(dispositivos.map((d) => d.mac));
-    pendentes = pendentes.filter((p) => !macs.has(p.mac));
-    return delay({ pendentes: pendentes.map((p) => ({ ...p })) });
-  }
-
-  // GET /api/config.json
-  if (method === 'GET' && path === '/api/config.json') {
-    return delay(config());
+    return delay({ dispositivos: dispositivos.map((d) => ({ ...d, chat_ids: [...d.chat_ids] })) });
   }
 
   // PUT /api/dispositivos/{mac}
@@ -85,11 +115,9 @@ export function mockApi(method, path, body) {
     const i = dispositivos.findIndex((d) => d.mac === mac);
     if (i >= 0) dispositivos[i] = device;
     else dispositivos.push(device);
-    pendentes = pendentes.filter((p) => p.mac !== mac);
-    const confirmado = (++putCount % 4) !== 0;
     // eslint-disable-next-line no-console
-    console.log('[mock] config salva:\n' + JSON.stringify(config(), null, 2));
-    return delay({ ok: true, confirmado_pelo_cinto: confirmado });
+    console.log('[mock] cinto salvo:\n' + JSON.stringify(device, null, 2));
+    return delay({ ok: true, confirmado_pelo_cinto: true });
   }
 
   // DELETE /api/dispositivos/{mac}
@@ -99,23 +127,15 @@ export function mockApi(method, path, body) {
     return delay({ ok: true });
   }
 
+  // GET /api/pendentes — o pareamento ainda não existe no firmware
+  if (method === 'GET' && path === '/api/pendentes') {
+    return delay({ pendentes: [] });
+  }
+
   // DELETE /api/pendentes/{mac}
   if (method === 'DELETE' && path.startsWith('/api/pendentes/')) {
-    const mac = macFromPath(path, '/api/pendentes/');
-    pendentes = pendentes.filter((p) => p.mac !== mac);
     return delay({ ok: true });
   }
 
-  // POST /api/teste-telegram
-  if (method === 'POST' && path === '/api/teste-telegram') {
-    const chat = (body && body.chat_id) || '';
-    if (!/^-?\d{6,15}$/.test(chat)) {
-      return delay({ ok: false, erro: 'chat_id_invalido', mensagem: 'Formato inválido.' });
-    }
-    const outcome = TEST_CYCLE[testIndex++ % TEST_CYCLE.length];
-    if (outcome === 'ok') return delay({ ok: true });
-    return delay({ ok: false, erro: outcome, mensagem: outcome });
-  }
-
-  return delay({ ok: false, erro: 'rota_desconhecida', mensagem: `Sem mock para ${method} ${path}` });
+  return delay(fail('rota_desconhecida', `Sem mock para ${method} ${path}`));
 }

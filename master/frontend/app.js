@@ -1,7 +1,7 @@
-const MOCK = true;
+/* Abrir com ?mock na URL usa dados falsos (mock.js), para ver a interface sem a master. */
+const MOCK = new URLSearchParams(location.search).has('mock');
 const API_BASE = '';
 
-/* Em MOCK, todas as chamadas são atendidas por mock.js (não vai para o firmware). */
 let mockApi = null;
 if (MOCK) {
   ({ mockApi } = await import('./mock.js'));
@@ -9,29 +9,35 @@ if (MOCK) {
 
 /* ---------- regras de domínio ---------- */
 
-const CHAT_RE = /^-?\d{6,15}$/;
+const CHAT_RE = /^-?\d{1,20}$/;
 const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
 const NOME_MIN = 2, NOME_MAX = 40;
-const APELIDO_MAX = 30;
 const MSG_MIN = 10, MSG_MAX = 300;
 
 const DEFAULT_MSG = 'ALERT: {nome} may have fallen. Detected at {hora} on {data}.';
 
 const PLACEHOLDERS = {
   '{nome}': 'Maria Aparecida',
-  '{apelido}': "Grandma Maria's belt",
   '{hora}': '14:32',
   '{data}': '09/09/2026',
-  '{bateria}': '41%',
 };
 
-const TEST_MESSAGES = {
-  ok: ['Test message sent. Check Telegram.', 'ok'],
-  chat_id_invalido: ['Invalid format. It must be a number, with no spaces.', 'bad'],
-  chat_desconhecido: ['Telegram rejected it. The person needs to send a message to the bot before they can receive alerts.', 'bad'],
-  sem_token: ['The master does not yet have the Telegram bot configured.', 'bad'],
-  sem_internet: ['The master has no internet connection. Testing is only possible after configuring Wi-Fi.', 'bad'],
+/* Resultado das chamadas ao Telegram: código devolvido pela master -> [texto, ok|bad]. */
+const TELEGRAM_MESSAGES = {
+  ok: ['Message sent. Check Telegram.', 'ok'],
+  chat_id_invalido: ['That chat number is not valid.', 'bad'],
+  chat_desconhecido: ['Telegram rejected this chat. The person needs to open the bot and press Start first.', 'bad'],
+  sem_token: ['Set the bot token in Settings first.', 'bad'],
+  token_invalido: ['Telegram did not accept the token. Check it in Settings.', 'bad'],
+  sem_internet: ['The master could not reach Telegram. Check its Wi-Fi in Settings.', 'bad'],
+  sem_relogio: ['The master is still setting its clock. Try again in a few seconds.', 'bad'],
+  erro_telegram: ['Telegram returned an unexpected error. Try again.', 'bad'],
+  sem_master: ["Can't reach the master. Check that you're connected to its Wi-Fi.", 'bad'],
 };
+
+function telegramMessage(code) {
+  return TELEGRAM_MESSAGES[code] || TELEGRAM_MESSAGES.erro_telegram;
+}
 
 /* ---------- camada de API ---------- */
 
@@ -68,6 +74,7 @@ function h(tag, attrs = {}, ...kids) {
 }
 
 const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function relativeTime(iso) {
   const then = new Date(iso).getTime();
@@ -80,6 +87,11 @@ function relativeTime(iso) {
   if (hr < 24) return hr === 1 ? '1 hour ago' : `${hr} hours ago`;
   const d = Math.round(hr / 24);
   return d === 1 ? '1 day ago' : `${d} days ago`;
+}
+
+function setResult(el, text, kind) {
+  el.textContent = text;
+  el.className = el.className.split(' ')[0] + (kind ? ' ' + kind : '');
 }
 
 let toastTimer = null;
@@ -107,13 +119,15 @@ function askConfirm(text, okLabel = 'Confirm') {
 /* ---------- troca de telas ---------- */
 
 function showView(name) {
-  $('view-home').hidden = name !== 'home';
-  $('view-form').hidden = name !== 'form';
+  for (const view of ['home', 'settings', 'form']) {
+    $(`view-${view}`).hidden = view !== name;
+  }
   window.scrollTo(0, 0);
 }
 
 /* ================= TELA INICIAL ================= */
 
+let knownDevices = [];
 let configuredMacs = new Set();
 let knownPendingMacs = new Set();
 
@@ -140,20 +154,20 @@ async function loadHome({ initial = false } = {}) {
       api('GET', '/api/dispositivos'),
       api('GET', '/api/pendentes'),
     ]);
-    const devices = dev.dispositivos || [];
-    configuredMacs = new Set(devices.map((d) => d.mac.toUpperCase()));
+    knownDevices = dev.dispositivos || [];
+    configuredMacs = new Set(knownDevices.map((d) => d.mac.toUpperCase()));
     const pendentes = (pend.pendentes || [])
       .filter((p) => !configuredMacs.has(p.mac.toUpperCase()));
 
     clearHomeStatus();
 
-    if (!devices.length && !pendentes.length) {
-      setHomeStatus('No belts yet. Press the pairing button on a belt and it will show up here.');
+    if (!knownDevices.length && !pendentes.length) {
+      setHomeStatus('No belts yet. Use "Add belt manually", or press the pairing button on a belt.');
       knownPendingMacs = new Set();
       return;
     }
 
-    renderDevices(devices);
+    renderDevices(knownDevices);
     renderPending(pendentes, { animateNew: !initial });
     knownPendingMacs = new Set(pendentes.map((p) => p.mac.toUpperCase()));
   } catch (e) {
@@ -195,14 +209,13 @@ function pendingRow(p, isNew) {
 }
 
 function deviceRow(d) {
-  const mac = d.mac.toUpperCase();
+  const count = (d.chat_ids || []).length;
   return h('li', {},
     h('div', { class: 'row-main' },
-      h('span', { class: 'dev-name', text: d.nome_idoso }),
-      d.apelido ? h('span', { class: 'dev-alias', text: d.apelido }) : null,
-      h('span', { class: 'state-dot' + (d.ativo ? '' : ' is-off'), text: d.ativo ? 'Active' : 'Inactive' }),
+      h('span', { class: 'dev-name', text: d.nome }),
+      h('span', { class: 'dev-alias', text: count === 1 ? '1 recipient' : `${count} recipients` }),
     ),
-    h('p', { class: 'mac mac-sm', text: mac }),
+    h('p', { class: 'mac mac-sm', text: d.mac.toUpperCase() }),
     h('div', { class: 'row-actions' },
       h('button', { class: 'btn', type: 'button', onclick: () => startEdit(d) }, 'Edit'),
       h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => removeDevice(d) }, 'Remove'),
@@ -224,21 +237,44 @@ async function discardPending(p) {
 }
 
 async function removeDevice(d) {
-  const ok = await askConfirm(`Remove ${d.nome_idoso}'s belt? Alerts from it will stop.`, 'Remove');
+  const ok = await askConfirm(`Remove ${d.nome}'s belt? Alerts from it will stop.`, 'Remove');
   if (!ok) return;
   try {
     await api('DELETE', `/api/dispositivos/${encodeURIComponent(d.mac)}`);
-    toast(`${d.nome_idoso}'s belt was removed.`);
+    toast(`${d.nome}'s belt was removed.`);
     loadHome();
   } catch (e) {
     toast("Couldn't remove it. Try again.");
   }
 }
 
+/* ---------- adicionar cinto digitando o MAC ---------- */
+
+function normalizeMac(text) {
+  const hex = text.replace(/[^0-9a-f]/gi, '');
+  if (hex.length !== 12) return null;
+  return hex.toUpperCase().match(/../g).join(':');
+}
+
+function addBeltManually() {
+  const dlg = $('add-dialog');
+  $('add-mac').value = '';
+  $('add-mac-err').hidden = true;
+  dlg.returnValue = 'cancel';
+  dlg.showModal();
+  $('add-mac').focus();
+  dlg.addEventListener('close', () => {
+    if (dlg.returnValue !== 'ok') return;
+    const mac = normalizeMac($('add-mac').value);
+    const existing = knownDevices.find((d) => d.mac.toUpperCase() === mac);
+    if (existing) startEdit(existing);
+    else startSetup({ mac });
+  }, { once: true });
+}
+
 /* ---------- polling da lista de pendentes ---------- */
 
 async function refreshPending() {
-  if (!$('view-form').hidden) return;
   try {
     const pend = await api('GET', '/api/pendentes');
     const pendentes = (pend.pendentes || [])
@@ -256,59 +292,213 @@ async function refreshPending() {
   }
 }
 
+/* ================= CONFIGURAÇÕES ================= */
+
+async function openSettings() {
+  showView('settings');
+  await refreshStatus();
+}
+
+async function refreshStatus() {
+  try {
+    const status = await api('GET', '/api/status');
+    applyStatus(status);
+    return status;
+  } catch (e) {
+    return null;
+  }
+}
+
+function applyStatus(status) {
+  const { wifi, telegram } = status;
+
+  $('wifi-badge').textContent = wifi.conectado ? 'Connected' : 'Not connected';
+  $('wifi-badge').classList.toggle('is-off', !wifi.conectado);
+  $('wifi-current').textContent = !wifi.ssid
+    ? 'No network saved yet.'
+    : wifi.conectado
+      ? `Connected to "${wifi.ssid}" (address ${wifi.ip}). The master reconnects by itself when it powers on.`
+      : `Saved network: "${wifi.ssid}". The master is not connected to it right now.`;
+  if (wifi.ssid && !$('wifi-ssid').value) $('wifi-ssid').value = wifi.ssid;
+
+  $('tg-badge').textContent = telegram.configurado ? 'Token saved' : 'Not set up';
+  $('tg-badge').classList.toggle('is-off', !telegram.configurado);
+  $('tg-token').placeholder = telegram.configurado ? 'Token saved. Paste a new one to replace it.' : '';
+}
+
+/* ---------- Wi-Fi ---------- */
+
+function signalLabel(rssi) {
+  if (rssi >= -60) return 'strong';
+  if (rssi >= -75) return 'good';
+  return 'weak';
+}
+
+async function scanNetworks() {
+  const btn = $('wifi-scan');
+  const result = $('wifi-scan-result');
+  btn.disabled = true;
+  setResult(result, 'Searching… this takes a few seconds.');
+  try {
+    const res = await api('GET', '/api/wifi/redes');
+    const list = $('wifi-list');
+    list.replaceChildren();
+    for (const net of res.redes || []) {
+      const button = h('button', { type: 'button', class: 'net-btn', onclick: () => pickNetwork(net, button) },
+        h('span', { text: net.ssid }),
+        h('span', { class: 'net-meta', text: `${net.aberta ? 'open' : 'secured'} · ${signalLabel(net.rssi)}` }),
+      );
+      list.append(h('li', {}, button));
+    }
+    list.hidden = !list.children.length;
+    setResult(result, list.children.length ? 'Tap your network.' : 'No networks found. Try again.');
+  } catch (e) {
+    setResult(result, "Couldn't search for networks. Try again.", 'bad');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function pickNetwork(net, button) {
+  for (const b of document.querySelectorAll('.net-btn')) b.classList.remove('is-selected');
+  button.classList.add('is-selected');
+  $('wifi-ssid').value = net.ssid;
+  $('wifi-pass').value = '';
+  $('wifi-pass').focus();
+}
+
+async function connectWifi() {
+  const ssid = $('wifi-ssid').value;
+  const pass = $('wifi-pass').value;
+  const result = $('wifi-result');
+  if (!ssid) { setResult(result, 'Enter the network name.', 'bad'); return; }
+  if (pass && (pass.length < 8 || pass.length > 63)) {
+    setResult(result, 'The password must have 8 to 63 characters.', 'bad');
+    return;
+  }
+
+  const btn = $('wifi-connect');
+  btn.disabled = true;
+  setResult(result, 'Connecting…');
+  try {
+    await api('POST', '/api/wifi', { ssid, senha: pass });
+
+    // A master leva alguns segundos para conectar; o celular pode perder o sinal
+    // dela por um instante quando o canal muda, então erros de rede são ignorados.
+    await sleep(2500);
+    const deadline = Date.now() + 25000;
+    while (Date.now() < deadline) {
+      try {
+        const status = await api('GET', '/api/status');
+        applyStatus(status);
+        if (status.wifi.conectado) {
+          setResult(result, `Connected. The master's address on your network is ${status.wifi.ip}.`, 'ok');
+          return;
+        }
+      } catch (e) { /* tenta de novo */ }
+      await sleep(1500);
+    }
+    setResult(result,
+      "Couldn't connect. Check the password and that this is a 2.4 GHz network. The master keeps trying.",
+      'bad');
+  } catch (e) {
+    setResult(result, e.message, 'bad');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------- token do Telegram ---------- */
+
+function onTokenInput() {
+  const hasText = $('tg-token').value.trim().length > 0;
+  $('tg-test').disabled = !hasText;
+  $('tg-save').disabled = true;  // só depois de um teste que deu certo
+  setResult($('tg-result'), '');
+}
+
+async function testToken() {
+  const btn = $('tg-test');
+  const result = $('tg-result');
+  btn.disabled = true;
+  setResult(result, 'Testing…');
+  try {
+    const res = await api('POST', '/api/telegram/testar-token', { token: $('tg-token').value.trim() });
+    if (res.ok) {
+      setResult(result, `Bot ${res.bot} works. Press Save.`, 'ok');
+      $('tg-save').disabled = false;
+    } else {
+      setResult(result, telegramMessage(res.erro)[0], 'bad');
+    }
+  } catch (e) {
+    setResult(result, telegramMessage('sem_master')[0], 'bad');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function saveToken() {
+  const btn = $('tg-save');
+  btn.disabled = true;
+  try {
+    await api('PUT', '/api/telegram/token', { token: $('tg-token').value.trim() });
+    $('tg-token').value = '';
+    $('tg-test').disabled = true;
+    setResult($('tg-result'), 'Token saved.', 'ok');
+    toast('Token saved.');
+    refreshStatus();
+  } catch (e) {
+    btn.disabled = false;
+    setResult($('tg-result'), `Couldn't save: ${e.message}`, 'bad');
+  }
+}
+
 /* ================= FORMULÁRIO ================= */
 
 const form = $('device-form');
 let editing = null;      // dispositivo em edição
-let isNewPairing = false;
 let formDirty = false;
 const touched = new Set();
 
+let chatOptions = new Map();   // chat_id -> nome mostrado
+const chatChecked = new Set(); // chat_ids marcados
+
 const fMac = $('f-mac');
 const fNome = $('f-nome');
-const fApelido = $('f-apelido');
-const fChat = $('f-chat');
 const fMsg = $('f-msg');
-const fAtivo = $('f-ativo');
 const saveBtn = $('f-save');
 const testBtn = $('f-test');
+const findBtn = $('f-find');
 
 function startSetup(p) {
-  editing = {
-    mac: p.mac.toUpperCase(),
-    nome_idoso: '',
-    apelido: '',
-    telegram_chat_id: '',
-    mensagem: DEFAULT_MSG,
-    ativo: true,
-    pareado_em: null,
-  };
-  isNewPairing = true;
+  editing = { mac: p.mac.toUpperCase(), nome: '', mensagem: DEFAULT_MSG, chat_ids: [] };
   $('form-title').textContent = 'Set up belt';
   openForm();
 }
 
 function startEdit(d) {
-  editing = { ...d, mac: d.mac.toUpperCase() };
-  isNewPairing = false;
+  editing = { ...d, mac: d.mac.toUpperCase(), chat_ids: [...(d.chat_ids || [])] };
   $('form-title').textContent = 'Edit belt';
   openForm();
 }
 
 function openForm() {
   fMac.textContent = editing.mac;
-  fNome.value = editing.nome_idoso || '';
-  fApelido.value = editing.apelido || '';
-  fChat.value = editing.telegram_chat_id || '';
+  fNome.value = editing.nome || '';
   fMsg.value = editing.mensagem || '';
-  fAtivo.checked = editing.ativo !== false;
+
+  // Os destinatários já salvos aparecem marcados, mesmo sem constar no getUpdates.
+  chatOptions = new Map(editing.chat_ids.map((id) => [id, 'Saved recipient']));
+  chatChecked.clear();
+  editing.chat_ids.forEach((id) => chatChecked.add(id));
+  renderChats();
 
   touched.clear();
   formDirty = false;
   $('form-warning').hidden = true;
   $('f-save-state').hidden = true;
-  $('f-test-result').textContent = '';
-  $('f-test-result').className = 'test-result';
+  setResult($('f-find-result'), '');
+  setResult($('f-test-result'), '');
   collapseHelp();
 
   updateCounter();
@@ -322,21 +512,98 @@ function collapseHelp() {
   $('f-chat-help-toggle').setAttribute('aria-expanded', 'false');
 }
 
+/* ---------- destinatários (conversas do Telegram) ---------- */
+
+function renderChats() {
+  const list = $('f-chats');
+  list.replaceChildren();
+  for (const [id, name] of chatOptions) {
+    const box = h('input', { type: 'checkbox', value: id });
+    box.checked = chatChecked.has(id);
+    box.addEventListener('change', () => {
+      if (box.checked) chatChecked.add(id); else chatChecked.delete(id);
+      formDirty = true;
+      touched.add('chat_ids');
+      validate();
+    });
+    list.append(h('li', {},
+      h('label', { class: 'chat-opt' },
+        box,
+        h('span', { class: 'chat-name', text: name }),
+        h('span', { class: 'mac mac-sm', text: id }),
+      ),
+      h('span', { class: 'chat-result', 'data-chat': id }),
+    ));
+  }
+}
+
+function chatResultEl(id) {
+  return $('f-chats').querySelector(`[data-chat="${CSS.escape(id)}"]`);
+}
+
+async function findChats() {
+  const result = $('f-find-result');
+  findBtn.disabled = true;
+  setResult(result, 'Searching…');
+  try {
+    const res = await api('GET', '/api/telegram/conversas');
+    if (!res.ok) {
+      const [text] = telegramMessage(res.erro);
+      setResult(result, text, 'bad');
+      return;
+    }
+    for (const chat of res.conversas || []) chatOptions.set(chat.chat_id, chat.nome);
+    renderChats();
+    setResult(result, (res.conversas || []).length
+      ? 'Tick who should receive this belt\'s alerts.'
+      : 'Nobody has written to the bot yet. See "How do people show up here?".');
+  } catch (e) {
+    setResult(result, telegramMessage('sem_master')[0], 'bad');
+  } finally {
+    findBtn.disabled = false;
+  }
+}
+
+async function sendTest() {
+  const ids = [...chatChecked];
+  if (!ids.length) return;
+  testBtn.disabled = true;
+  setResult($('f-test-result'), 'Sending…');
+  for (const id of ids) {
+    const el = chatResultEl(id);
+    if (el) { el.textContent = ''; el.className = 'chat-result'; }
+  }
+
+  let sent = 0;
+  for (const id of ids) {
+    let code;
+    try {
+      const res = await api('POST', '/api/teste-telegram', { chat_id: id });
+      code = res.ok ? 'ok' : (res.erro || 'erro_telegram');
+    } catch (e) {
+      code = 'sem_master';
+    }
+    const [text, kind] = telegramMessage(code);
+    if (code === 'ok') sent += 1;
+    const el = chatResultEl(id);
+    if (el) { el.textContent = text; el.className = 'chat-result ' + kind; }
+  }
+  setResult($('f-test-result'), `Sent to ${sent} of ${ids.length}.`, sent === ids.length ? 'ok' : 'bad');
+  validate();
+}
+
 /* ---------- validação ---------- */
 
 function fieldErrors() {
   const errs = {};
   const nome = fNome.value.trim();
   if (nome.length < NOME_MIN || nome.length > NOME_MAX) {
-    errs.nome_idoso = `Enter the person's name (${NOME_MIN} to ${NOME_MAX} characters).`;
+    errs.nome = `Enter the person's name (${NOME_MIN} to ${NOME_MAX} characters).`;
   }
-  if (fApelido.value.trim().length > APELIDO_MAX) {
-    errs.apelido = `Keep the nickname under ${APELIDO_MAX} characters.`;
-  }
-  const chat = fChat.value.trim();
-  if (!chat) errs.telegram_chat_id = 'Enter the Telegram recipient number.';
-  else if (!CHAT_RE.test(chat)) {
-    errs.telegram_chat_id = 'It must be 6 to 15 digits, no spaces. See "How do I get this number?".';
+  if (!chatChecked.size) {
+    errs.chat_ids = 'Tick at least one person to receive the alerts.';
+  } else if (![...chatChecked].every((id) => CHAT_RE.test(id))) {
+    errs.chat_ids = 'One of the chosen chats has an invalid number.';
   }
   const msgLen = fMsg.value.trim().length;
   if (msgLen < MSG_MIN) errs.mensagem = `Write the alert message (at least ${MSG_MIN} characters).`;
@@ -355,14 +622,13 @@ function setFieldError(name, inputEl, errEl, errs) {
 
 function validate() {
   const errs = fieldErrors();
-  setFieldError('nome_idoso', fNome, $('f-nome-err'), errs);
-  setFieldError('apelido', fApelido, $('f-apelido-err'), errs);
-  setFieldError('telegram_chat_id', fChat, $('f-chat-err'), errs);
+  setFieldError('nome', fNome, $('f-nome-err'), errs);
+  setFieldError('chat_ids', $('f-chats'), $('f-chat-err'), errs);
   setFieldError('mensagem', fMsg, $('f-msg-err'), errs);
 
   const valid = Object.keys(errs).length === 0;
   saveBtn.disabled = !valid;
-  testBtn.disabled = !CHAT_RE.test(fChat.value.trim());
+  testBtn.disabled = chatChecked.size === 0;
   return valid;
 }
 
@@ -410,64 +676,31 @@ function insertAtCursor(el, text) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-/* ---------- teste do Telegram ---------- */
-
-function showTestResult(code) {
-  const [msg, kind] = TEST_MESSAGES[code] || TEST_MESSAGES.chat_desconhecido;
-  const el = $('f-test-result');
-  el.textContent = msg;
-  el.className = 'test-result ' + (kind === 'ok' ? 'ok' : 'bad');
-}
-
-async function sendTest() {
-  const chat = fChat.value.trim();
-  if (!CHAT_RE.test(chat)) { showTestResult('chat_id_invalido'); return; }
-  testBtn.disabled = true;
-  const el = $('f-test-result');
-  el.textContent = 'Sending…';
-  el.className = 'test-result';
-  try {
-    const res = await api('POST', '/api/teste-telegram', { chat_id: chat });
-    showTestResult(res.ok ? 'ok' : (res.erro || 'chat_desconhecido'));
-  } catch (e) {
-    showTestResult('sem_internet');
-  } finally {
-    testBtn.disabled = !CHAT_RE.test(fChat.value.trim());
-  }
-}
-
 /* ---------- salvar ---------- */
 
 function collect() {
   return {
-    mac: editing.mac,
-    nome_idoso: fNome.value.trim(),
-    apelido: fApelido.value.trim(),
-    telegram_chat_id: fChat.value.trim(),
+    nome: fNome.value.trim(),
     mensagem: fMsg.value.trim(),
-    ativo: fAtivo.checked,
-    pareado_em: editing.pareado_em || new Date().toISOString(),
+    chat_ids: [...chatChecked],
   };
 }
 
 async function onSubmit(ev) {
   ev.preventDefault();
-  ['nome_idoso', 'apelido', 'telegram_chat_id', 'mensagem'].forEach((n) => touched.add(n));
+  ['nome', 'chat_ids', 'mensagem'].forEach((n) => touched.add(n));
   if (!validate()) {
     form.querySelector('.field.invalid input, .field.invalid textarea')?.focus();
     return;
   }
-  const device = collect();
   saveBtn.disabled = true;
   const state = $('f-save-state');
   state.hidden = false;
-  state.textContent = 'Confirming with the belt…';
+  state.textContent = 'Saving…';
   try {
-    const res = await api('PUT', `/api/dispositivos/${encodeURIComponent(device.mac)}`, device);
+    await api('PUT', `/api/dispositivos/${encodeURIComponent(editing.mac)}`, collect());
     formDirty = false;
-    toast(res.confirmado_pelo_cinto === false
-      ? "Saved. The belt didn't confirm — it may be off or out of range."
-      : 'Saved.');
+    toast('Saved.');
     loadHome();
   } catch (e) {
     state.hidden = true;
@@ -495,16 +728,34 @@ form.addEventListener('submit', onSubmit);
 $('form-back').addEventListener('click', attemptLeave);
 $('f-cancel').addEventListener('click', attemptLeave);
 $('home-retry').addEventListener('click', () => loadHome({ initial: true }));
+findBtn.addEventListener('click', findChats);
 testBtn.addEventListener('click', sendTest);
+
+$('open-settings').addEventListener('click', openSettings);
+$('settings-back').addEventListener('click', () => loadHome());
+$('wifi-scan').addEventListener('click', scanNetworks);
+$('wifi-connect').addEventListener('click', connectWifi);
+$('tg-token').addEventListener('input', onTokenInput);
+$('tg-test').addEventListener('click', testToken);
+$('tg-save').addEventListener('click', saveToken);
+
+$('add-belt-btn').addEventListener('click', addBeltManually);
+$('add-ok').addEventListener('click', (ev) => {
+  if (normalizeMac($('add-mac').value)) return;
+  ev.preventDefault();  // mantém o diálogo aberto
+  $('add-mac-err').textContent = 'Enter the 12 characters of the address, like AA:BB:CC:DD:EE:FF.';
+  $('add-mac-err').hidden = false;
+});
+$('add-mac').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') { ev.preventDefault(); $('add-ok').click(); }
+});
 
 form.addEventListener('input', () => { formDirty = true; });
 
 fNome.addEventListener('input', validate);
-fApelido.addEventListener('input', validate);
-fChat.addEventListener('input', validate);
 fMsg.addEventListener('input', () => { updateCounter(); updatePreview(); validate(); });
 
-[[fNome, 'nome_idoso'], [fApelido, 'apelido'], [fChat, 'telegram_chat_id'], [fMsg, 'mensagem']]
+[[fNome, 'nome'], [fMsg, 'mensagem']]
   .forEach(([el, name]) => el.addEventListener('blur', () => { touched.add(name); validate(); }));
 
 $('f-chat-help-toggle').addEventListener('click', (e) => {
@@ -523,7 +774,7 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refreshPending();
+  if (!document.hidden && !$('view-home').hidden) refreshPending();
 });
 
 setInterval(() => {
@@ -532,4 +783,18 @@ setInterval(() => {
 
 /* ================= START ================= */
 
-loadHome({ initial: true });
+/* Sem Wi-Fi ou sem token a master ainda não consegue enviar alertas: abrir direto nas
+   configurações. Se nem o status responder, a tela inicial mostra o erro de conexão. */
+async function start() {
+  try {
+    const status = await api('GET', '/api/status');
+    if (!status.wifi.conectado || !status.telegram.configurado) {
+      showView('settings');
+      applyStatus(status);
+      return;
+    }
+  } catch (e) { /* cai na tela inicial */ }
+  loadHome({ initial: true });
+}
+
+start();
