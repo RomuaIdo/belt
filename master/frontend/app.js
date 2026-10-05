@@ -256,10 +256,72 @@ function normalizeMac(text) {
   return hex.toUpperCase().match(/../g).join(':');
 }
 
+/* Máscara do campo enquanto o usuário digita: AA:BB:CC:DD:EE:FF.
+   Separadores (: - espaço), digitados ou colados, são ignorados e o ':' é reposto
+   sozinho. Qualquer outro caractere fora do hexadecimal, e o que passar de 12
+   dígitos, é descartado e reportado em invalidChar / tooLong. */
+const MAC_DIGITS = 12;
+const MAC_HEX_RE = /[0-9a-f]/i;
+const MAC_SEPARATOR_RE = /[:\-\s]/;
+
+function formatMac(raw, caret, prevDigitCount, backspace, deleting) {
+  let digits = '';
+  let before = 0;                 // dígitos à esquerda do cursor
+  let invalidChar = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (MAC_HEX_RE.test(ch)) {
+      digits += ch.toUpperCase();
+      if (i < caret) before++;
+    } else if (!MAC_SEPARATOR_RE.test(ch)) {
+      invalidChar = true;
+    }
+  }
+
+  const tooLong = digits.length > MAC_DIGITS;
+  if (tooLong) {
+    digits = digits.slice(0, MAC_DIGITS);
+    before = Math.min(before, MAC_DIGITS);
+  }
+
+  // Backspace que só apagou um ':' não mudou os dígitos; sem isto o ':' voltaria
+  // sozinho e o usuário ficaria preso. Apaga também o dígito anterior.
+  if (backspace && before > 0 && digits.length === prevDigitCount) {
+    digits = digits.slice(0, before - 1) + digits.slice(before);
+    before--;
+  }
+
+  let value = (digits.match(/.{1,2}/g) || []).join(':');
+  // O ':' após cada par só aparece ao digitar, nunca ao apagar.
+  if (!deleting && digits.length > 0 && digits.length < MAC_DIGITS && digits.length % 2 === 0) {
+    value += ':';
+  }
+
+  // Cursor logo após o N-ésimo dígito; após o ':' reposto, se digitou no fim.
+  let pos = before === 0 ? 0 : before + Math.floor((before - 1) / 2);
+  if (!deleting && before === digits.length && value.endsWith(':')) pos = value.length;
+
+  return { value, caret: pos, invalidChar, tooLong };
+}
+
+let addMacDigitCount = 0;
+
+function showAddMacError(text) {
+  $('add-mac-err').textContent = text;
+  $('add-mac-err').hidden = false;
+  $('add-mac').setAttribute('aria-invalid', 'true');
+}
+
+function clearAddMacError() {
+  $('add-mac-err').hidden = true;
+  $('add-mac').setAttribute('aria-invalid', 'false');
+}
+
 function addBeltManually() {
   const dlg = $('add-dialog');
   $('add-mac').value = '';
-  $('add-mac-err').hidden = true;
+  addMacDigitCount = 0;
+  clearAddMacError();
   dlg.returnValue = 'cancel';
   dlg.showModal();
   $('add-mac').focus();
@@ -743,8 +805,20 @@ $('add-belt-btn').addEventListener('click', addBeltManually);
 $('add-ok').addEventListener('click', (ev) => {
   if (normalizeMac($('add-mac').value)) return;
   ev.preventDefault();  // mantém o diálogo aberto
-  $('add-mac-err').textContent = 'Enter the 12 characters of the address, like AA:BB:CC:DD:EE:FF.';
-  $('add-mac-err').hidden = false;
+  showAddMacError(`Enter all 12 digits (you have ${addMacDigitCount}), like AA:BB:CC:DD:EE:FF.`);
+});
+$('add-mac').addEventListener('input', (ev) => {
+  const el = ev.target;
+  const type = ev.inputType || '';
+  const r = formatMac(el.value, el.selectionStart ?? el.value.length, addMacDigitCount,
+                      type === 'deleteContentBackward', type.startsWith('delete'));
+  el.value = r.value;
+  el.setSelectionRange(r.caret, r.caret);
+  addMacDigitCount = r.value.replace(/:/g, '').length;
+
+  if (r.invalidChar) showAddMacError('Only the digits 0–9 and the letters A–F can be part of an address.');
+  else if (r.tooLong) showAddMacError('An address has 12 digits (6 pairs). The extra digits were ignored.');
+  else clearAddMacError();
 });
 $('add-mac').addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter') { ev.preventDefault(); $('add-ok').click(); }
