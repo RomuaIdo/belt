@@ -230,7 +230,10 @@ input[type="text"]:focus, input[type="password"]:focus, textarea:focus { border-
 textarea { resize: vertical; min-height: 96px; }
 
 .field.invalid input[type="text"],
-.field.invalid textarea { border-color: var(--rust); }
+.field.invalid textarea,
+input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
+
+#add-mac { font-family: var(--mono); letter-spacing: 0.04em; }
 
 .hint { margin: 6px 0 0; color: var(--ink-soft); font-size: 0.875rem; max-width: 60ch; }
 .err {
