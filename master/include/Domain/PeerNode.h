@@ -19,6 +19,11 @@ public:
     const String& getMessage() const { return message; }
     void setMessage(const String& newMessage) { message = newMessage; }
 
+    // Modelo do texto do alerta, com placeholders ({nome}, {hora}, ...).
+    // Vazio significa "usar a mensagem padrao".
+    const String& getMessage() const { return message; }
+    void setMessage(const String& newMessage) { message = newMessage; }
+
 private:
     String macAddress;
     String alias;
