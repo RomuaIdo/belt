@@ -217,7 +217,7 @@ h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
 }
 .opt { font-weight: 400; color: var(--ink-soft); }
 
-input[type="text"], textarea {
+input[type="text"], input[type="password"], textarea {
   width: 100%;
   font: 16px/1.5 var(--sans);
   color: var(--ink);
@@ -226,7 +226,7 @@ input[type="text"], textarea {
   border-radius: 8px;
   padding: 11px 12px;
 }
-input[type="text"]:focus, textarea:focus { border-color: var(--pine); }
+input[type="text"]:focus, input[type="password"]:focus, textarea:focus { border-color: var(--pine); }
 textarea { resize: vertical; min-height: 96px; }
 
 .field.invalid input[type="text"],
@@ -402,6 +402,73 @@ textarea { resize: vertical; min-height: 96px; }
   font-size: 0.9375rem;
   box-shadow: 0 6px 20px rgba(27, 36, 32, 0.25);
 }
+
+/* ---------- home actions and settings ---------- */
+
+.app-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.iconbtn-end { margin-left: 0; margin-right: -10px; }
+
+.home-actions { display: flex; justify-content: flex-end; }
+
+.panel-body { padding: 4px 16px 18px; }
+.panel-body .field { margin-top: 16px; }
+.panel-body .hint:first-child { margin-top: 12px; }
+.badge-end { margin-left: auto; }
+
+.steps { margin: 12px 0 0; padding-left: 20px; }
+.steps li { margin: 6px 0; max-width: 60ch; }
+.steps code, .hint code {
+  font: 0.875rem var(--mono);
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* lists of tappable choices: Wi-Fi networks and Telegram conversations */
+.net-list, .chat-list { list-style: none; margin: 12px 0 0; padding: 0; }
+.net-list li, .chat-list li { border-top: 1px solid var(--line); }
+.net-list li:first-child, .chat-list li:first-child { border-top: 0; }
+.net-list, .chat-list:not(:empty) {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.net-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.net-btn:hover, .net-btn.is-selected { background: var(--pine-tint); }
+.net-meta { color: var(--ink-soft); font-size: 0.8125rem; white-space: nowrap; }
+
+.chat-list li { padding: 4px 12px; }
+.chat-opt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-height: var(--tap);
+  cursor: pointer;
+}
+.chat-opt input { width: 20px; height: 20px; flex: none; accent-color: var(--pine); }
+.chat-name { font-weight: 600; }
+.chat-result { display: block; margin: 0 0 6px 32px; font-size: 0.8125rem; color: var(--ink-soft); }
+.chat-result.ok { color: var(--pine); }
+.chat-result.bad { color: var(--rust); }
+.chat-result:empty { display: none; }
+
+.dialog-gap { margin-top: 18px; }
 
 /* ---------- wider screens ---------- */
 

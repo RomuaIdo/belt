@@ -31,9 +31,10 @@ SystemConfig ConfigStorage::load() const {
     JsonArrayConst peers = doc["peers"].as<JsonArrayConst>();
     for (JsonObjectConst peerJson : peers) {
         PeerNode peer(peerJson["mac"] | "", peerJson["alias"] | "");
-        JsonArrayConst phones = peerJson["phones"].as<JsonArrayConst>();
-        for (const char* phone : phones) {
-            if (phone) peer.addPhone(phone);
+        peer.setMessage(peerJson["message"] | "");
+        JsonArrayConst chatIds = peerJson["chatIds"].as<JsonArrayConst>();
+        for (const char* chatId : chatIds) {
+            if (chatId) peer.addChatId(chatId);
         }
         config.addPeer(peer);
     }
@@ -52,9 +53,10 @@ bool ConfigStorage::save(const SystemConfig& config) const {
         JsonObject peerJson = peers.add<JsonObject>();
         peerJson["mac"] = peer.getMacAddress();
         peerJson["alias"] = peer.getAlias();
-        JsonArray phones = peerJson["phones"].to<JsonArray>();
-        for (const auto& phone : peer.getPhones()) {
-            phones.add(phone);
+        peerJson["message"] = peer.getMessage();
+        JsonArray chatIds = peerJson["chatIds"].to<JsonArray>();
+        for (const auto& chatId : peer.getChatIds()) {
+            chatIds.add(chatId);
         }
     }
 

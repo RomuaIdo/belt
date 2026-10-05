@@ -17,14 +17,14 @@ bool tryParseNotification(File& entry, Notification& out) {
     String originMac = doc["originMac"] | "";
     String message = doc["message"] | "";
 
-    std::vector<String> pendingPhones;
-    JsonArrayConst pending = doc["pendingPhones"].as<JsonArrayConst>();
-    pendingPhones.reserve(pending.size());
-    for (const char* phone : pending) {
-        if (phone) pendingPhones.emplace_back(phone);
+    std::vector<String> pendingChatIds;
+    JsonArrayConst pending = doc["pendingChatIds"].as<JsonArrayConst>();
+    pendingChatIds.reserve(pending.size());
+    for (const char* chatId : pending) {
+        if (chatId) pendingChatIds.emplace_back(chatId);
     }
 
-    out = Notification(eventId, timestamp, originMac, message, pendingPhones);
+    out = Notification(eventId, timestamp, originMac, message, pendingChatIds);
     return true;
 }
 
@@ -47,9 +47,9 @@ bool CallQueueStorage::writeToFile(const Notification& notification) const {
     doc["originMac"] = notification.getOriginMac();
     doc["message"] = notification.getMessage();
 
-    JsonArray pending = doc["pendingPhones"].to<JsonArray>();
-    for (const auto& phone : notification.getPendingPhones()) {
-        pending.add(phone);
+    JsonArray pending = doc["pendingChatIds"].to<JsonArray>();
+    for (const auto& chatId : notification.getPendingChatIds()) {
+        pending.add(chatId);
     }
     
     File file = LittleFS.open(pathFor(notification.getEventId()), "w");
@@ -65,7 +65,7 @@ bool CallQueueStorage::enqueue(const Notification& notification) const {
 
 bool CallQueueStorage::updatePending(const Notification& notification) const {
     // Same on-disk representation as enqueue(): overwrite the event's file
-    // with the new (shorter) pendingPhones list. Deciding when an event is
+    // with the new (shorter) pendingChatIds list. Deciding when an event is
     // done and should be removed instead is the caller's job (see
     // QueueWorker), not this storage layer's.
     return writeToFile(notification);

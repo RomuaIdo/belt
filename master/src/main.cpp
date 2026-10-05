@@ -1,10 +1,22 @@
 #include <Arduino.h>
 #include "App/AppController.h"
 
-static AppController appController;
+namespace {
+    AppController appController("/config.json");  // o construtor so guarda o caminho
+    bool ready = false;
+}
 
-void setup() {}
+void setup() {
+    Serial.begin(115200);
+    ready = appController.setup();
+    if (!ready) {
+        Serial.println("AppController: falha ao montar o LittleFS");
+    }
+}
 
 void loop() {
-    appController.execute();
+    if (ready) {
+        appController.execute();
+    }
+    delay(10);
 }
