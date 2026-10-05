@@ -3,6 +3,7 @@
 // Note: Requires a UART bridge (e.g., DevKitC-1). Native USB-CDC drops the Serial link on reset.
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <unity.h>
 #include <LittleFS.h>
 #include <vector>
@@ -41,15 +42,14 @@ String pathForEvent(const String& eventId) {
 }
 
 Notification makeNotificationA() {
-    std::vector<String> phones = {"11111111111", "22222222222"};
-    return Notification(eventIdA(), 1700000000, "AA:BB:CC:DD:EE:01", "Fall alert A", phones);
+    std::vector<String> chatIds = {"123456789", "-1001234567890"};
+    return Notification(eventIdA(), 1700000000, "AA:BB:CC:DD:EE:01", "Fall alert A", chatIds);
 }
 
 Notification makeNotificationB() {
-    std::vector<String> phones = {"33333333333"};
-    return Notification(eventIdB(), 1700000100, "AA:BB:CC:DD:EE:02", "Fall alert B", phones);
+    std::vector<String> chatIds = {"5000000000"};
+    return Notification(eventIdB(), 1700000100, "AA:BB:CC:DD:EE:02", "Fall alert B", chatIds);
 }
-
 
 // Simulates power loss mid-write: a truncated, unclosed JSON prefix.
 void writeCorruptedQueueFile() {
@@ -108,6 +108,25 @@ void test_event_files_use_the_expected_naming_convention() {
 
 // ---- reconstructing the queue after reboot ----
 
+void test_saved_queue_uses_pending_chat_ids_as_strings() {
+    const String eventIds[] = {eventIdA(), eventIdB()};
+    const char* expectedChatIds[] = {"-1001234567890", "5000000000"};
+    for (size_t i = 0; i < 2; ++i) {
+        File file = LittleFS.open(pathForEvent(eventIds[i]), "r");
+        TEST_ASSERT_TRUE(file);
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, file);
+        file.close();
+        TEST_ASSERT_FALSE(error);
+
+        JsonArrayConst pending = doc["pendingChatIds"].as<JsonArrayConst>();
+        TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(pending.size()));
+        TEST_ASSERT_TRUE(pending[0].is<String>());
+        TEST_ASSERT_EQUAL_STRING(expectedChatIds[i], pending[0].as<const char*>());
+        TEST_ASSERT_TRUE(doc["pendingPhones"].isNull());
+    }
+}
+
 void test_reload_after_reboot_restores_only_the_valid_events() {
     auto pending = storage->loadAllPending();
     // 2 valid events; the truncated third file must be silently skipped.
@@ -128,9 +147,9 @@ void test_reload_after_reboot_preserves_partial_update_progress() {
     TEST_ASSERT_NOT_NULL_MESSAGE(found, "event A missing after reboot");
     if (found != nullptr) {
         // updatePending() ran before the simulated crash and already marked
-        // the first phone as sent; that partial progress must survive.
-        TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(found->getPendingPhones().size()));
-        TEST_ASSERT_EQUAL_STRING("22222222222", found->getPendingPhones()[0].c_str());
+        // the first chat as sent; that partial progress must survive.
+        TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(found->getPendingChatIds().size()));
+        TEST_ASSERT_EQUAL_STRING("-1001234567890", found->getPendingChatIds()[0].c_str());
         TEST_ASSERT_FALSE(found->isCompleted());
     }
 }
@@ -148,13 +167,13 @@ void test_reload_after_reboot_restores_event_b_untouched() {
 
     TEST_ASSERT_NOT_NULL_MESSAGE(found, "event B missing after reboot");
     if (found != nullptr) {
-        TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(found->getPendingPhones().size()));
-        TEST_ASSERT_EQUAL_STRING("33333333333", found->getPendingPhones()[0].c_str());
+        TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(found->getPendingChatIds().size()));
+        TEST_ASSERT_EQUAL_STRING("5000000000", found->getPendingChatIds()[0].c_str());
     }
 }
 
 void test_queue_size_counts_every_file_including_the_corrupted_one() {
-    // getQueueSize() is a cheap directory listing (no JSON parsing), so it also counts the unparseable file. 
+    // getQueueSize() is a cheap directory listing (no JSON parsing), so it also counts the unparseable file.
     TEST_ASSERT_EQUAL_UINT32(3, static_cast<uint32_t>(storage->getQueueSize()));
 }
 
@@ -185,7 +204,7 @@ void test_completing_an_event_and_removing_it_shrinks_the_queue() {
     }
     TEST_ASSERT_TRUE_MESSAGE(foundB, "event B missing after reboot");
 
-    eventB.markPhoneAsSent("33333333333");
+    eventB.markChatAsSent("5000000000");
     TEST_ASSERT_TRUE(eventB.isCompleted());
     TEST_ASSERT_TRUE(storage->remove(eventB.getEventId()));
 
@@ -194,8 +213,8 @@ void test_completing_an_event_and_removing_it_shrinks_the_queue() {
 }
 
 void test_purge_invalid_entries_removes_orphaned_completed_file() {
-    std::vector<String> noPendingPhones;
-    Notification orphan(orphanEventId(), 1700000300, "AA:BB:CC:DD:EE:03", "already delivered", noPendingPhones);
+    std::vector<String> noPendingChatIds;
+    Notification orphan(orphanEventId(), 1700000300, "AA:BB:CC:DD:EE:03", "already delivered", noPendingChatIds);
     TEST_ASSERT_TRUE(storage->updatePending(orphan));
 
     // loadAllPending() already excludes it (nothing left to deliver), but
@@ -236,7 +255,7 @@ void setup() {
         bool okB = storage->enqueue(makeNotificationB());
 
         Notification partiallySentA = makeNotificationA();
-        partiallySentA.markPhoneAsSent("11111111111");
+        partiallySentA.markChatAsSent("123456789");
         bool okUpdate = storage->updatePending(partiallySentA);
 
         writeCorruptedQueueFile();
@@ -257,8 +276,8 @@ void setup() {
     writePhaseMarker = readRebootMarker();
 
     if (writePhaseMarker != kMarkerPhaseOk && writePhaseMarker != kMarkerPhaseFailed) {
-    // Flash remnants from an interrupted run (pio test doesn't wipe LittleFS).
-    // Treat unknown markers as stale data, clean up, and restart phase 1.
+        // Flash remnants from an interrupted run (pio test doesn't wipe LittleFS).
+        // Treat unknown markers as stale data, clean up, and restart phase 1.
         Serial.printf("Stale/invalid reboot marker found (%s); resetting test state and re-running phase 1...\n",
                        writePhaseMarker.c_str());
         resetQueueDir();
@@ -274,6 +293,7 @@ void setup() {
     UNITY_BEGIN();
     RUN_TEST(test_write_phase_before_reboot_succeeded);
     RUN_TEST(test_event_files_use_the_expected_naming_convention);
+    RUN_TEST(test_saved_queue_uses_pending_chat_ids_as_strings);
     RUN_TEST(test_reload_after_reboot_restores_only_the_valid_events);
     RUN_TEST(test_reload_after_reboot_preserves_partial_update_progress);
     RUN_TEST(test_reload_after_reboot_restores_event_b_untouched);
