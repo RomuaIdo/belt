@@ -15,6 +15,9 @@ public:
     bool init();
     bool registerPeer(const String& macAddress);
     bool send(const String& targetMac, const uint8_t* data, size_t len);
+    // Switches the radio's WiFi channel (ESP-NOW has no channel of its
+    // own — it rides whatever channel the radio is currently tuned to).
+    bool setChannel(uint8_t channel);
 
     void setOnMessageReceived(ReceiveCallback callback) { onMessageReceived = callback; }
 
