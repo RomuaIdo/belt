@@ -28,17 +28,27 @@ Each belt is identified by its **MAC address** — there is no IP between belt a
 | `master/` | Master firmware — PlatformIO project (`include/`, `src/`, `test/`) targeting an ESP32-S3-DevKitC-1 (N16R8: 16 MB flash, 8 MB PSRAM) |
 | `master/prompt.md` | Master's class diagram and per-class design notes (architecture source of truth) |
 | `master/prototypes/` | Work in progress from other team members, not yet wired into the firmware above (see below) |
+| `slave/` | Belt (slave) firmware — PlatformIO project targeting an ESP32-S3 Super Mini (ESP32-S3FH4R2: 4 MB flash, 2 MB PSRAM) |
+| `slave/prompt.md` | Slave's class diagram, per-class design notes, and the task-by-task roadmap for the rest of the belt firmware |
+| `shared/` | Wire-protocol and MAC-utility headers included by both `master/` and `slave/` (`-I../shared/include`), so they can never drift out of sync between the two firmwares |
 | `docs/Plano_de_Projeto.pdf` | Project plan submitted for the course |
 
 ## Master firmware (`master/`)
 
 PlatformIO project (Arduino framework) implementing the master station: SoftAP + captive
-portal for setup, a config/monitoring web dashboard, ESP-NOW reception with an immediate ACK,
-Telegram notifications, and a power-loss-safe retry queue on LittleFS. The domain model,
-storage and web layers are covered by the Unity test suites under `master/test/`.
+portal for setup, a config/monitoring web dashboard, ESP-NOW pairing and reception with an
+immediate ACK, Telegram notifications, and a power-loss-safe retry queue on LittleFS. The
+domain model, storage, network and web layers are covered by the Unity test suites under
+`master/test/`.
 
-The belt↔master pairing handshake beyond manual web-UI peer registration (M1.4) and the belt
-(slave) firmware itself have not been implemented yet.
+## Slave firmware (`slave/`)
+
+PlatformIO project (Arduino framework) for the belt. Implemented so far: a pairing button that
+listens for the master's broadcast to learn its MAC and replies so the master learns the belt's
+MAC back (bidirectional ESP-NOW addressing, no manual MAC entry on either side), with the
+learned master MAC persisted on LittleFS across reboots. Motion sensing/fall detection,
+vibration+LED warning with a cancel window, alert transmission, and battery monitoring are not
+implemented yet — see `slave/prompt.md`'s roadmap section for the planned, team-dividable tasks.
 
 ## Work in progress (`master/prototypes/`)
 
