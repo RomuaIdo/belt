@@ -50,7 +50,7 @@ bool CallQueueStorage::writeToFile(const Notification& notification) const {
     for (const auto& chatId : notification.getPendingChatIds()) {
         pending.add(chatId);
     }
-
+    
     File file = LittleFS.open(pathFor(notification.getEventId()), "w");
     if (!file) return false;
     bool ok = serializeJson(doc, file) > 0;
