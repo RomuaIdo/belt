@@ -27,6 +27,7 @@ Each belt is identified by its **MAC address** — there is no IP between belt a
 |---|---|
 | `master/` | Master firmware — PlatformIO project (`include/`, `src/`, `test/`) targeting an ESP32-S3-DevKitC-1 (N16R8: 16 MB flash, 8 MB PSRAM) |
 | `master/prompt.md` | Master's class diagram and per-class design notes (architecture source of truth) |
+| `master/frontend/` | Config page (HTML/CSS/JS) served from the master's own LittleFS |
 | `master/prototypes/` | Work in progress from other team members, not yet wired into the firmware above (see below) |
 | `slave/` | Belt (slave) firmware — PlatformIO project targeting an ESP32-S3 Super Mini (ESP32-S3FH4R2: 4 MB flash, 2 MB PSRAM) |
 | `slave/prompt.md` | Slave's class diagram, per-class design notes, and the task-by-task roadmap for the rest of the belt firmware |
@@ -35,11 +36,12 @@ Each belt is identified by its **MAC address** — there is no IP between belt a
 
 ## Master firmware (`master/`)
 
-PlatformIO project (Arduino framework) implementing the master station: SoftAP + captive
-portal for setup, a config/monitoring web dashboard, ESP-NOW pairing and reception with an
-immediate ACK, Telegram notifications, and a power-loss-safe retry queue on LittleFS. The
-domain model, storage, network and web layers are covered by the Unity test suites under
-`master/test/`.
+PlatformIO project (Arduino framework) implementing the master station: an always-on Wi-Fi
+AP+STA with a config page served from LittleFS (`master/frontend/`), ESP-NOW pairing and
+alert reception, asynchronous Telegram sends on FreeRTOS tasks with retry/backoff, and a
+power-loss-safe retry queue on LittleFS. The domain model, storage, network and messaging
+layers are covered by the Unity test suites under `master/test/`; see `master/README.md`
+for build/flash/test instructions.
 
 ## Slave firmware (`slave/`)
 
@@ -64,7 +66,7 @@ above — treat it as a separate, standalone exploration until it gets wired in:
   # open http://localhost:8000
   ```
 - `telegram_call.cpp` — standalone prototype for the Telegram Bot API HTTP call, independent
-  from `master/src/Messaging/TelegramNotifier.cpp`.
+  from `master/src/Messaging/TelegramTask.cpp`.
 
 ## Schedule
 
