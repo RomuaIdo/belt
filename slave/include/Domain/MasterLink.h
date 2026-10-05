@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-// Domain model for the slave's single learned peer, discovered via pairing.
+// Domain model for the paired master peer.
 class MasterLink {
 public:
     MasterLink() = default;

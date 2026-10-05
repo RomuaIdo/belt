@@ -26,7 +26,7 @@ bool EspNowTransceiver::registerPeer(const String& macAddress) {
 
     esp_now_peer_info_t peerInfo = {};
     memcpy(peerInfo.peer_addr, mac, 6);
-    peerInfo.channel = 0; // use the channel already active on the STA/AP interface
+    peerInfo.channel = 0; // Current interface channel
     peerInfo.encrypt = false;
     peerInfo.ifidx = WIFI_IF_STA;
 

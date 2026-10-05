@@ -1,6 +1,5 @@
-// Unit tests for Protocol::PairingMessage framing: correct size/magic/key, and that it can
-// never be confused with the existing (untagged) EspNowTransceiver::sendAck payload.
-// Run with: pio test -e esp32-s3-devkitc-1-test -f test_protocol
+// Unit tests for Protocol::PairingMessage framing.
+// Run: pio test -e esp32-s3-devkitc-1-test -f test_protocol
 
 #include <Arduino.h>
 #include <unity.h>
@@ -31,7 +30,7 @@ void test_is_pairing_message_true_for_well_framed_message() {
 void test_is_pairing_message_false_for_wrong_key() {
     Protocol::PairingMessage msg{};
     msg.type = Protocol::MessageType::PairRequest;
-    memset(msg.key, 0, sizeof(msg.key)); // never fill it: garbage/zeroed key
+    memset(msg.key, 0, sizeof(msg.key)); // Zeroed key
 
     TEST_ASSERT_FALSE(Protocol::isPairingMessage(reinterpret_cast<const uint8_t*>(&msg), sizeof(msg)));
 }
@@ -50,13 +49,13 @@ void test_is_pairing_message_false_for_null_data() {
 }
 
 void test_is_pairing_message_rejects_the_existing_sendack_payload() {
-    // EspNowTransceiver::sendAck's own (untagged, legacy) payload: {'A', status}.
+    // Legacy sendAck payload: {'A', status}
     const uint8_t ackPayload[2] = {'A', 0x01};
     TEST_ASSERT_FALSE(Protocol::isPairingMessage(ackPayload, sizeof(ackPayload)));
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
 
     UNITY_BEGIN();
     RUN_TEST(test_pairing_message_size_matches_magic_type_and_key);

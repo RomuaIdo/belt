@@ -1,14 +1,12 @@
-// Quick hardware-spec diagnostic, not a real unit test
-// Run with: pio test -e esp32-s3-devkitc-1-test -f test_board_specs
+// Diagnostic: validates ESP32-S3 hardware specifications.
+// Run: pio test -e esp32-s3-devkitc-1-test -f test_board_specs
 
 #include <Arduino.h>
 #include <unity.h>
 
 namespace {
 constexpr uint32_t kExpectedMinFlashBytes = 16UL * 1024 * 1024; // 16 MB
-// ESP-IDF reserves ~2.4 KB of PSRAM for internal bookkeeping, reporting
-// slightly under 8 MiB (~8,386,215 B). Using an 8,000,000 B threshold safely
-// verifies an 8 MB chip while distinguishing it from smaller sizes (e.g., 2 MB).
+// Minimum threshold accounting for ESP-IDF PSRAM bookkeeping overhead.
 constexpr uint32_t kExpectedMinPsramBytes = 8UL * 1000 * 1000;
 } // namespace
 
@@ -55,7 +53,7 @@ void test_psram_size_is_at_least_8mb() {
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
     Serial.begin(115200);
 
     printBoardSpecs();

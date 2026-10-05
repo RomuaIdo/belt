@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <vector>
 
-// Domain model representing an authorized remote ESP sensor (belt) node.
+// Authorized remote sensor (belt) peer node.
 class PeerNode {
 public:
     PeerNode() = default;

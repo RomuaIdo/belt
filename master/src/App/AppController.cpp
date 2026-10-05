@@ -13,28 +13,27 @@
 namespace {
 constexpr const char* QUEUE_DIR = "/queue";
 
-// Master's own always-on network: the config page lives at http://192.168.4.1.
+// Master AP network credentials (http://192.168.4.1).
 constexpr const char* AP_SSID = "CintoAlerta-Master";
-constexpr const char* AP_PASSWORD = "cintoalerta";  // WPA2 requires 8+ characters
+constexpr const char* AP_PASSWORD = "cintoalerta";  // Minimum 8 characters for WPA2
 
 constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 30000;
 constexpr uint32_t RETRY_INITIAL_MS = 5000;
 constexpr uint32_t RETRY_MAX_MS = 300000;
 
-// Curitiba timezone (UTC-3, no DST) and NTP servers.
+// Timezone (UTC-3, no DST) and NTP servers.
 constexpr const char* TIMEZONE = "<-03>3";
 constexpr const char* NTP_SERVER_1 = "pool.ntp.org";
 constexpr const char* NTP_SERVER_2 = "time.google.com";
 
-// Bounded wait for a dashboard-initiated (mode 2) PairResponse.
+// Timeout for dashboard-initiated (mode 2) PairResponse.
 constexpr uint32_t PAIRING_CONFIRM_TIMEOUT_MS = 10000;
 constexpr uint8_t ESP_NOW_ACK_STATUS_OK = 0x01;
 constexpr uint8_t ALERT_EVENT_QUEUE_DEPTH = 8;
 
 bool isSuccess(int httpStatus) { return httpStatus >= 200 && httpStatus < 300; }
 
-// Telegram permanently rejected the chat (no such chat, bot blocked):
-// retrying won't help.
+// Permanent Telegram rejection (invalid chat or bot blocked).
 bool isPermanentRejection(int httpStatus) { return httpStatus == 400 || httpStatus == 403; }
 
 Protocol::PairingMessage makePairingMessage(Protocol::MessageType type) {
@@ -44,7 +43,7 @@ Protocol::PairingMessage makePairingMessage(Protocol::MessageType type) {
     return msg;
 }
 
-// Fixed-size POD: the only thing safe to memcpy across the FreeRTOS queue.
+// POD struct for FreeRTOS queue transfer.
 struct PendingAlertEvent {
     char originMac[18];
 };
@@ -54,7 +53,7 @@ AppController::AppController(const String& configFilePath)
     : configStorage(configFilePath),
       pairingService(PAIRING_CONFIRM_TIMEOUT_MS, []() { return millis(); }),
       webPortal(config, configStorage, [this] {
-          // The page saved a different Wi-Fi: drop the current network and connect to the new one.
+          // Reconnect with new Wi-Fi credentials.
           WiFi.disconnect();
           connectWifi();
       }) {}
@@ -83,8 +82,7 @@ bool AppController::setup() {
 
     alertEventQueue = xQueueCreate(ALERT_EVENT_QUEUE_DEPTH, sizeof(PendingAlertEvent));
 
-    // AP + STA: the master hosts its own network (config page) while also
-    // connecting to the home router to reach Telegram.
+    // AP + STA: host config portal while maintaining Wi-Fi uplink.
     WiFi.mode(WIFI_AP_STA);
     WiFi.setAutoReconnect(true);
     if (WiFi.softAP(AP_SSID, AP_PASSWORD)) {
@@ -182,8 +180,7 @@ bool AppController::enqueueAlert(const String& originMac) {
     const String displayName = peer->getAlias().isEmpty() ? peer->getMacAddress() : peer->getAlias();
     const String message = formatAlertMessage(peer->getMessage(), displayName, now, isClockValid());
 
-    // Without a synced clock the timestamp repeats; advance it until the id
-    // is unique so this doesn't overwrite another pending alert's file.
+    // Ensure unique event ID even without synced clock.
     uint32_t timestamp = static_cast<uint32_t>(now);
     String eventId = Notification::makeEventId(peer->getMacAddress(), timestamp);
     while (findPending(eventId) != pendingNotifications.end()) {
@@ -197,7 +194,7 @@ bool AppController::enqueueAlert(const String& originMac) {
     if (!saved) {
         Serial.printf("AppController: failed to persist %s; keeping it in RAM only\n", eventId.c_str());
     }
-    // Trying to send even without a successful write beats losing the alert.
+    // Queue in memory even if flash persistence fails.
     pendingNotifications.push_back(std::move(notification));
     return saved;
 }
@@ -222,7 +219,7 @@ void AppController::markChatAsSent(const String& eventId, const String& chatId) 
         }
         pendingNotifications.erase(it);
     } else if (!callQueueStorage->updatePending(*it)) {
-        // Accepted risk: a chat may receive the alert again after a reboot.
+        // Chat may receive duplicate alert on reboot if update fails.
         Serial.printf("AppController: failed to update %s in the queue\n", eventId.c_str());
     }
 }
@@ -259,7 +256,7 @@ void AppController::dispatchPendingSends() {
         return;
     }
     if (millis() - lastFailureMs < retryDelayMs) {
-        return;  // backing off after a failure
+        return;  // Backoff delay active
     }
 
     for (const auto& notification : pendingNotifications) {
@@ -273,25 +270,24 @@ void AppController::dispatchPendingSends() {
                     break;
                 }
             }
-            if (freeTask == nullptr) return;  // all busy; retry next iteration
+            if (freeTask == nullptr) return;  // All tasks busy
 
             if (!freeTask->startTask(config.telegramBotToken, notification.getEventId(), chatId,
                                  notification.getMessage())) {
-                return;  // out of memory or invalid input; retry next iteration
+                return;  // Task creation failed
             }
         }
     }
 }
 
 void AppController::onEspNowMessage(const String& senderMac, const uint8_t* payload, int len) {
-    // Tagged pairing traffic takes its own path; the alert flow below is untouched.
+    // Route pairing messages separately from alert flow.
     if (Protocol::isPairingMessage(payload, len)) {
         handlePairingMessage(senderMac, payload, len);
         return;
     }
 
-    // ACKing immediately, before any lookup or HTTP work, stops the belt's
-    // retry loop as fast as possible.
+    // ACK immediately to terminate belt retry loop.
     espNow.sendAck(senderMac, ESP_NOW_ACK_STATUS_OK);
 
     if (config.findPeerByMac(senderMac) == nullptr) {
@@ -299,7 +295,7 @@ void AppController::onEspNowMessage(const String& senderMac, const uint8_t* payl
         return;
     }
 
-    // Deferred to execute() so the ESP-NOW/Wi-Fi task never blocks on it.
+    // Defer processing to execute() loop.
     PendingAlertEvent evt{};
     senderMac.toCharArray(evt.originMac, sizeof(evt.originMac));
     if (alertEventQueue != nullptr) {
@@ -308,13 +304,11 @@ void AppController::onEspNowMessage(const String& senderMac, const uint8_t* payl
 }
 
 void AppController::handlePairingMessage(const String& senderMac, const uint8_t* payload, int len) {
-    (void)len; // already validated by isPairingMessage()'s length check
+    (void)len; // Validated by isPairingMessage()
     const auto* msg = reinterpret_cast<const Protocol::PairingMessage*>(payload);
 
     if (msg->type == Protocol::MessageType::PairRequest) {
-        // Mode 1: a belt is broadcasting unprompted. Always reply (the shared
-        // key is the gate), so it stops searching; it only becomes a real
-        // peer once the caregiver finishes setup from the dashboard.
+        // Mode 1: reply to broadcast search and register pending pairing.
         espNow.registerPeer(senderMac);
         Protocol::PairingMessage response = makePairingMessage(Protocol::MessageType::PairResponse);
         espNow.send(senderMac, reinterpret_cast<uint8_t*>(&response), sizeof(response));
@@ -327,8 +321,8 @@ void AppController::handlePairingMessage(const String& senderMac, const uint8_t*
     }
 
     if (msg->type == Protocol::MessageType::PairResponse) {
-        // Mode 2: confirms the belt the caregiver entered on the dashboard.
-        if (!pairingService.isPendingFor(senderMac)) return; // stray/expired/wrong MAC
+        // Mode 2: confirm dashboard-initiated pairing.
+        if (!pairingService.isPendingFor(senderMac)) return; // Stale or mismatched response
         espNow.registerPeer(senderMac);
         config.addPeer(stagedPeer);
         if (!configStorage.save(config)) {
@@ -360,7 +354,7 @@ bool AppController::pairAndSaveNewBelt(const PeerNode& peer) {
     const String& mac = peer.getMacAddress();
 
     if (config.findPeerByMac(mac) != nullptr) {
-        // Editing an already-registered belt: nothing to pair.
+        // Existing peer: update without pairing handshake.
         config.removePeer(mac);
         config.addPeer(peer);
         return configStorage.save(config);
@@ -370,16 +364,13 @@ bool AppController::pairAndSaveNewBelt(const PeerNode& peer) {
         pendingPairings.begin(), pendingPairings.end(),
         [&](const PendingPairing& pending) { return MacUtils::equal(pending.mac, mac); });
     if (alreadyPending) {
-        // The belt already broadcast and got its PairResponse (mode 1);
-        // finishing the dashboard form just finalizes it.
+        // Finalize mode 1 discovery from pending list.
         discardPendingPairing(mac);
         config.addPeer(peer);
         return configStorage.save(config);
     }
 
-    // Genuinely new MAC: dashboard-initiated pairing (mode 2). Unicast a
-    // PairRequest and block, bounded, for the belt's PairResponse — the
-    // ESP-NOW RX callback still fires while this loop blocks execute().
+    // Mode 2: unicast PairRequest and wait for belt confirmation.
     stagedPeer = peer;
     pairingService.start(mac);
     Protocol::PairingMessage request = makePairingMessage(Protocol::MessageType::PairRequest);

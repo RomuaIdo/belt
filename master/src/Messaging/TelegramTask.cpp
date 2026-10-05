@@ -9,7 +9,7 @@
 #include "Messaging/telegram_certificate.h"
 
 namespace {
-// ESP-IDF stack sizes are in bytes. Verify headroom on real hardware.
+// ESP-IDF stack sizes are in bytes.
 constexpr uint32_t TASK_STACK_BYTES = 8192;
 constexpr UBaseType_t TASK_PRIORITY = 1;
 
@@ -47,7 +47,7 @@ bool TelegramTask::startTask(const String& token, const String& event, const Str
         return false;
     }
 
-    // Fill everything before xTaskCreate: the task may run before it returns.
+    // Populate fields before xTaskCreate.
     botToken = token;
     eventId = event;
     chatId = chat;
@@ -65,7 +65,7 @@ bool TelegramTask::startTask(const String& token, const String& event, const Str
 void TelegramTask::run(void* self) {
     auto* task = static_cast<TelegramTask*>(self);
     task->httpStatus = request(task->botToken, "sendMessage", task->payload);
-    vTaskDelete(nullptr);  // a task can never return
+    vTaskDelete(nullptr);  // Tasks must not return.
 }
 
 int TelegramTask::request(const String& token, const char* method, const String& jsonBody,

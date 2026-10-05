@@ -3,10 +3,7 @@
 #include <Arduino.h>
 #include <functional>
 
-// Pure state machine for the broadcast-search pairing flow (mode 1):
-// button press -> Searching (bounded by searchTimeoutMs) -> Paired once
-// the master's PairResponse arrives, or TimedOut. Hardware I/O (channel
-// hopping, actually broadcasting) is handled externally by AppController.
+// State machine for slave broadcast pairing search (mode 1).
 class PairingService {
 public:
     enum class State { Idle, Searching, Paired, TimedOut };
@@ -17,7 +14,7 @@ public:
     void startSearching();
     void tick();
 
-    // Searching -> Paired; a no-op in any other state.
+    // Transitions from Searching to Paired.
     void onPairResponseReceived();
 
     void reset();

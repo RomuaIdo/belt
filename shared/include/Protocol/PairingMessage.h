@@ -4,33 +4,24 @@
 #include <cstddef>
 #include <cstring>
 
-// Wire-protocol definition shared between master/ and slave/ (via each
-// project's "-I../shared/include" build flag) so the format can't drift.
-//
-// Symmetric by design: whichever side RECEIVES a valid-keyed PairRequest
-// saves the sender's MAC and replies with PairResponse; whichever side
-// receives that PairResponse saves the sender's MAC too. This covers both
-// pairing modes with no per-mode message types:
-//   - slave-initiated: slave broadcasts PairRequest across channels,
-//     master (always listening) replies.
-//   - master-initiated: master unicasts PairRequest to a MAC entered on
-//     the dashboard, slave replies.
+// Wire-protocol definition shared between master and slave.
+// Symmetric protocol: receiving a valid PairRequest saves peer MAC and replies
+// with PairResponse; receiving PairResponse saves peer MAC.
 namespace Protocol {
 
-// Never collides with EspNowTransceiver::sendAck's raw {'A', status} payload ('A' == 0x41).
+// Magic byte distinguishing pairing messages from alert/ACK packets.
 constexpr uint8_t kMagicByte = 0xC1;
 
 constexpr const char* kBroadcastMac = "FF:FF:FF:FF:FF:FF";
 
-// Shared secret gating PairRequest acceptance, since a receiver may now act
-// on one without first opening any explicit "pairing window".
+// Shared secret for validating pairing requests.
 constexpr size_t kPairingKeyLength = 16;
 constexpr char kPairingKey[kPairingKeyLength] = "CintoAlertaPair";
 
 enum class MessageType : uint8_t {
     PairRequest = 0x01,
     PairResponse = 0x02,
-    // 0x10/0x11 reserved for a future tagged FallAlert/FallAck protocol.
+    // 0x10/0x11 reserved for future FallAlert/FallAck.
 };
 
 #pragma pack(push, 1)
@@ -51,7 +42,7 @@ inline bool hasValidKey(const PairingMessage& msg) {
     return memcmp(msg.key, kPairingKey, kPairingKeyLength) == 0;
 }
 
-// True only for a correctly-framed, correctly-keyed PairingMessage.
+// Validates message size, magic byte, and pairing key.
 inline bool isPairingMessage(const uint8_t* data, int len) {
     if (data == nullptr || len != static_cast<int>(kPairingMessageSize) || data[0] != kMagicByte) {
         return false;

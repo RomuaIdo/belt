@@ -4,7 +4,7 @@
 #include <vector>
 #include "Domain/PeerNode.h"
 
-// In-memory representation of the full operational configuration.
+// Full operational configuration state.
 
 class SystemConfig {
 public:

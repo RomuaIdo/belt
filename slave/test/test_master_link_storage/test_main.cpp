@@ -1,6 +1,5 @@
-// Persistence validation across a real reboot (ESP.restart()), mirroring master/test/test_config_storage.
-// Run with: pio test -e esp32-s3-supermini-test -f test_master_link_storage
-// Note: requires a UART bridge; native USB-CDC drops the Serial link on reset.
+// Validates MasterLinkStorage persistence across ESP.restart().
+// Run: pio test -e esp32-s3-supermini-test -f test_master_link_storage (requires UART bridge).
 
 #include <Arduino.h>
 #include <unity.h>
@@ -65,7 +64,7 @@ void test_clear_removes_the_persisted_file() {
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
     Serial.begin(115200);
 
     if (!LittleFS.begin(true)) {
@@ -89,7 +88,7 @@ void setup() {
         Serial.flush();
         delay(2000);
         ESP.restart();
-        return; // unreachable, kept for clarity
+        return;
     }
 
     Serial.println("\n=== PHASE 2: after reboot, validating the MAC reads back correctly ===");

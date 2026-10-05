@@ -17,7 +17,7 @@ void PairingService::tick() {
 }
 
 void PairingService::onPairResponseReceived() {
-    if (state != State::Searching) return; // stray/duplicate response: ignore
+    if (state != State::Searching) return; // Ignore stray response
     state = State::Paired;
 }
 

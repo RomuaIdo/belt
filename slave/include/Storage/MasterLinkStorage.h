@@ -3,8 +3,7 @@
 #include <Arduino.h>
 #include "Domain/MasterLink.h"
 
-// Persists the learned MasterLink as a single JSON file on LittleFS,
-// mirroring master/'s ConfigStorage shape exactly (load/save/clear).
+// Persists learned MasterLink to LittleFS as JSON.
 class MasterLinkStorage {
 public:
     explicit MasterLinkStorage(String filePath);

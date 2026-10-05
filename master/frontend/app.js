@@ -1,4 +1,4 @@
-/* Abrir com ?mock na URL usa dados falsos (mock.js), para ver a interface sem a master. */
+// Use ?mock in URL to test UI with mock.js.
 const MOCK = new URLSearchParams(location.search).has('mock');
 const API_BASE = '';
 
@@ -7,7 +7,7 @@ if (MOCK) {
   ({ mockApi } = await import('./mock.js'));
 }
 
-/* ---------- regras de domínio ---------- */
+// Domain rules
 
 const CHAT_RE = /^-?\d{1,20}$/;
 const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
@@ -22,7 +22,7 @@ const PLACEHOLDERS = {
   '{data}': '09/09/2026',
 };
 
-/* Resultado das chamadas ao Telegram: código devolvido pela master -> [texto, ok|bad]. */
+// Telegram response mapping: code -> [message, status]
 const TELEGRAM_MESSAGES = {
   ok: ['Message sent. Check Telegram.', 'ok'],
   chat_id_invalido: ['That chat number is not valid.', 'bad'],
@@ -39,7 +39,7 @@ function telegramMessage(code) {
   return TELEGRAM_MESSAGES[code] || TELEGRAM_MESSAGES.erro_telegram;
 }
 
-/* ---------- camada de API ---------- */
+// API layer
 
 async function api(method, path, body) {
   if (MOCK) return mockApi(method, path, body);
@@ -58,7 +58,7 @@ async function api(method, path, body) {
   return data;
 }
 
-/* ---------- utilidades ---------- */
+// Utilities
 
 function h(tag, attrs = {}, ...kids) {
   const node = document.createElement(tag);
@@ -103,7 +103,7 @@ function toast(msg) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
 }
 
-/* ---------- diálogo de confirmação ---------- */
+// Confirmation dialog
 
 function askConfirm(text, okLabel = 'Confirm') {
   return new Promise((resolve) => {
@@ -116,7 +116,7 @@ function askConfirm(text, okLabel = 'Confirm') {
   });
 }
 
-/* ---------- troca de telas ---------- */
+// View switching
 
 function showView(name) {
   for (const view of ['home', 'settings', 'form']) {
@@ -125,7 +125,7 @@ function showView(name) {
   window.scrollTo(0, 0);
 }
 
-/* ================= TELA INICIAL ================= */
+// Home view
 
 let knownDevices = [];
 let configuredMacs = new Set();
@@ -248,7 +248,7 @@ async function removeDevice(d) {
   }
 }
 
-/* ---------- adicionar cinto digitando o MAC ---------- */
+// Manual MAC entry
 
 function normalizeMac(text) {
   const hex = text.replace(/[^0-9a-f]/gi, '');
@@ -256,17 +256,14 @@ function normalizeMac(text) {
   return hex.toUpperCase().match(/../g).join(':');
 }
 
-/* Máscara do campo enquanto o usuário digita: AA:BB:CC:DD:EE:FF.
-   Separadores (: - espaço), digitados ou colados, são ignorados e o ':' é reposto
-   sozinho. Qualquer outro caractere fora do hexadecimal, e o que passar de 12
-   dígitos, é descartado e reportado em invalidChar / tooLong. */
+// Formats input into AA:BB:CC:DD:EE:FF, stripping non-hex characters.
 const MAC_DIGITS = 12;
 const MAC_HEX_RE = /[0-9a-f]/i;
 const MAC_SEPARATOR_RE = /[:\-\s]/;
 
 function formatMac(raw, caret, prevDigitCount, backspace, deleting) {
   let digits = '';
-  let before = 0;                 // dígitos à esquerda do cursor
+  let before = 0;                 // Digits before cursor
   let invalidChar = false;
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
@@ -284,20 +281,19 @@ function formatMac(raw, caret, prevDigitCount, backspace, deleting) {
     before = Math.min(before, MAC_DIGITS);
   }
 
-  // Backspace que só apagou um ':' não mudou os dígitos; sem isto o ':' voltaria
-  // sozinho e o usuário ficaria preso. Apaga também o dígito anterior.
+  // If backspace only removed ':', also delete preceding digit.
   if (backspace && before > 0 && digits.length === prevDigitCount) {
     digits = digits.slice(0, before - 1) + digits.slice(before);
     before--;
   }
 
   let value = (digits.match(/.{1,2}/g) || []).join(':');
-  // O ':' após cada par só aparece ao digitar, nunca ao apagar.
+  // Append ':' after pairs only when typing forward.
   if (!deleting && digits.length > 0 && digits.length < MAC_DIGITS && digits.length % 2 === 0) {
     value += ':';
   }
 
-  // Cursor logo após o N-ésimo dígito; após o ':' reposto, se digitou no fim.
+  // Position cursor after the N-th digit or trailing ':'.
   let pos = before === 0 ? 0 : before + Math.floor((before - 1) / 2);
   if (!deleting && before === digits.length && value.endsWith(':')) pos = value.length;
 
@@ -334,7 +330,7 @@ function addBeltManually() {
   }, { once: true });
 }
 
-/* ---------- polling da lista de pendentes ---------- */
+// Pending devices polling
 
 async function refreshPending() {
   try {
@@ -342,7 +338,7 @@ async function refreshPending() {
     const pendentes = (pend.pendentes || [])
       .filter((p) => !configuredMacs.has(p.mac.toUpperCase()));
 
-    // se a tela está em estado vazio/erro e agora chegou algo, recarrega tudo
+    // Reload full view if empty/error state now has items
     if (!$('home-status').hidden) {
       if (pendentes.length) loadHome();
       return;
@@ -350,11 +346,11 @@ async function refreshPending() {
     renderPending(pendentes, { animateNew: true });
     knownPendingMacs = new Set(pendentes.map((p) => p.mac.toUpperCase()));
   } catch (e) {
-    /* falha de polling é silenciosa: não destrói a tela */
+    // Silently ignore polling errors
   }
 }
 
-/* ================= CONFIGURAÇÕES ================= */
+// Settings
 
 async function openSettings() {
   showView('settings');
@@ -388,7 +384,7 @@ function applyStatus(status) {
   $('tg-token').placeholder = telegram.configurado ? 'Token saved. Paste a new one to replace it.' : '';
 }
 
-/* ---------- Wi-Fi ---------- */
+// Wi-Fi
 
 function signalLabel(rssi) {
   if (rssi >= -60) return 'strong';
@@ -445,8 +441,7 @@ async function connectWifi() {
   try {
     await api('POST', '/api/wifi', { ssid, senha: pass });
 
-    // A master leva alguns segundos para conectar; o celular pode perder o sinal
-    // dela por um instante quando o canal muda, então erros de rede são ignorados.
+    // Wait for connection; network drops during channel switches are ignored.
     await sleep(2500);
     const deadline = Date.now() + 25000;
     while (Date.now() < deadline) {
@@ -457,7 +452,8 @@ async function connectWifi() {
           setResult(result, `Connected. The master's address on your network is ${status.wifi.ip}.`, 'ok');
           return;
         }
-      } catch (e) { /* tenta de novo */ }
+      } catch (e) { // Retry
+      }
       await sleep(1500);
     }
     setResult(result,
@@ -470,12 +466,12 @@ async function connectWifi() {
   }
 }
 
-/* ---------- token do Telegram ---------- */
+// Telegram token
 
 function onTokenInput() {
   const hasText = $('tg-token').value.trim().length > 0;
   $('tg-test').disabled = !hasText;
-  $('tg-save').disabled = true;  // só depois de um teste que deu certo
+  $('tg-save').disabled = true;  // Enabled only after successful test
   setResult($('tg-result'), '');
 }
 
@@ -515,15 +511,15 @@ async function saveToken() {
   }
 }
 
-/* ================= FORMULÁRIO ================= */
+// Form view
 
 const form = $('device-form');
-let editing = null;      // dispositivo em edição
+let editing = null;      // Device being edited
 let formDirty = false;
 const touched = new Set();
 
-let chatOptions = new Map();   // chat_id -> nome mostrado
-const chatChecked = new Set(); // chat_ids marcados
+let chatOptions = new Map();   // chat_id -> display name
+const chatChecked = new Set(); // Selected chat_ids
 
 const fMac = $('f-mac');
 const fNome = $('f-nome');
@@ -549,7 +545,7 @@ function openForm() {
   fNome.value = editing.nome || '';
   fMsg.value = editing.mensagem || '';
 
-  // Os destinatários já salvos aparecem marcados, mesmo sem constar no getUpdates.
+  // Pre-check saved recipients even if omitted from getUpdates
   chatOptions = new Map(editing.chat_ids.map((id) => [id, 'Saved recipient']));
   chatChecked.clear();
   editing.chat_ids.forEach((id) => chatChecked.add(id));
@@ -574,7 +570,7 @@ function collapseHelp() {
   $('f-chat-help-toggle').setAttribute('aria-expanded', 'false');
 }
 
-/* ---------- destinatários (conversas do Telegram) ---------- */
+// Telegram recipients
 
 function renderChats() {
   const list = $('f-chats');
@@ -654,7 +650,7 @@ async function sendTest() {
   validate();
 }
 
-/* ---------- validação ---------- */
+// Validation
 
 function fieldErrors() {
   const errs = {};
@@ -694,7 +690,7 @@ function validate() {
   return valid;
 }
 
-/* ---------- contador e pré-visualização da mensagem ---------- */
+// Counter and preview
 
 function updateCounter() {
   const len = fMsg.value.trim().length;
@@ -726,7 +722,7 @@ function updatePreview() {
   }
 }
 
-/* ---------- inserir placeholder no cursor ---------- */
+// Insert placeholder at cursor
 
 function insertAtCursor(el, text) {
   const start = el.selectionStart ?? el.value.length;
@@ -738,7 +734,7 @@ function insertAtCursor(el, text) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-/* ---------- salvar ---------- */
+// Save
 
 function collect() {
   return {
@@ -773,7 +769,7 @@ async function onSubmit(ev) {
   }
 }
 
-/* ---------- sair do formulário ---------- */
+// Exit form
 
 async function attemptLeave() {
   if (formDirty) {
@@ -784,7 +780,7 @@ async function attemptLeave() {
   loadHome();
 }
 
-/* ================= LISTENERS ================= */
+// Event listeners
 
 form.addEventListener('submit', onSubmit);
 $('form-back').addEventListener('click', attemptLeave);
@@ -804,7 +800,7 @@ $('tg-save').addEventListener('click', saveToken);
 $('add-belt-btn').addEventListener('click', addBeltManually);
 $('add-ok').addEventListener('click', (ev) => {
   if (normalizeMac($('add-mac').value)) return;
-  ev.preventDefault();  // mantém o diálogo aberto
+  ev.preventDefault();  // Keep dialog open
   showAddMacError(`Enter all 12 digits (you have ${addMacDigitCount}), like AA:BB:CC:DD:EE:FF.`);
 });
 $('add-mac').addEventListener('input', (ev) => {
@@ -855,10 +851,9 @@ setInterval(() => {
   if (!document.hidden && !$('view-home').hidden) refreshPending();
 }, 3000);
 
-/* ================= START ================= */
+// Start
 
-/* Sem Wi-Fi ou sem token a master ainda não consegue enviar alertas: abrir direto nas
-   configurações. Se nem o status responder, a tela inicial mostra o erro de conexão. */
+// Open settings directly if Wi-Fi or token is unconfigured.
 async function start() {
   try {
     const status = await api('GET', '/api/status');
@@ -867,7 +862,8 @@ async function start() {
       applyStatus(status);
       return;
     }
-  } catch (e) { /* cai na tela inicial */ }
+  } catch (e) { // Fall back to home view
+  }
   loadHome({ initial: true });
 }
 

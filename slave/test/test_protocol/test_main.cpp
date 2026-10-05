@@ -1,5 +1,5 @@
-// Unit tests for Protocol::PairingMessage framing (slave's copy of master/test/test_protocol).
-// Run with: pio test -e esp32-s3-supermini-test -f test_protocol
+// Unit tests for Protocol::PairingMessage framing.
+// Run: pio test -e esp32-s3-supermini-test -f test_protocol
 
 #include <Arduino.h>
 #include <unity.h>
@@ -30,7 +30,7 @@ void test_is_pairing_message_true_for_well_framed_message() {
 void test_is_pairing_message_false_for_wrong_key() {
     Protocol::PairingMessage msg{};
     msg.type = Protocol::MessageType::PairRequest;
-    memset(msg.key, 0, sizeof(msg.key)); // never fill it: garbage/zeroed key
+    memset(msg.key, 0, sizeof(msg.key)); // Zeroed key
 
     TEST_ASSERT_FALSE(Protocol::isPairingMessage(reinterpret_cast<const uint8_t*>(&msg), sizeof(msg)));
 }
@@ -49,7 +49,7 @@ void test_is_pairing_message_false_for_null_data() {
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
 
     UNITY_BEGIN();
     RUN_TEST(test_pairing_message_size_matches_magic_type_and_key);

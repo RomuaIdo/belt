@@ -40,13 +40,9 @@ private:
     void onEspNowMessage(const String& senderMac, const uint8_t* payload, int len);
     void handlePairingMessage(const String& senderMac, const uint8_t* payload, int len);
 
-    // Pairing mode 1 (belt broadcasts, unprompted): replies immediately so
-    // the belt stops searching, but only remembers the MAC here until the
-    // caregiver finishes setup from the dashboard.
+    // Pairing mode 1: belt broadcast discovery awaiting dashboard setup.
     void addPendingPairing(const String& mac);
-    // Pairing mode 2 (dashboard-initiated): unicasts a PairRequest and blocks
-    // (bounded) for the belt's PairResponse before persisting. Called from
-    // WebPortal's save-device handler. Returns false on timeout.
+    // Pairing mode 2: dashboard-initiated handshake with target belt MAC.
     bool pairAndSaveNewBelt(const PeerNode& peer);
     std::vector<PendingPairing> getPendingPairings() const { return pendingPairings; }
     void discardPendingPairing(const String& mac);
@@ -60,10 +56,9 @@ private:
     std::vector<Notification> pendingNotifications;
     std::vector<PendingPairing> pendingPairings;
     TelegramTask telegramTasks[MAX_PARALLEL_SENDS];
-    PeerNode stagedPeer; // peer being confirmed by pairAndSaveNewBelt()
+    PeerNode stagedPeer; // Peer undergoing mode 2 confirmation
 
-    // Bridges the ESP-NOW RX callback (radio task context) to execute()
-    // (loop() task), so alert dispatch never runs from an interrupt context.
+    // FreeRTOS queue bridging radio RX callback to execute() task.
     QueueHandle_t alertEventQueue = nullptr;
 
     uint32_t lastFailureMs = 0;
