@@ -4,15 +4,15 @@
 PeerNode::PeerNode(String macAddress, String alias)
     : macAddress(std::move(macAddress)), alias(std::move(alias)) {}
 
-void PeerNode::addPhone(const String& phone) {
-    for (const auto& existing : phoneNumbers) {
-        if (existing == phone) return; // avoid duplicate recipients
+void PeerNode::addChatId(const String& chatId) {
+    for (const auto& existing : chatIds) {
+        if (existing == chatId) return; // avoid duplicate recipients
     }
-    phoneNumbers.push_back(phone);
+    chatIds.push_back(chatId);
 }
 
-void PeerNode::removePhone(const String& phone) {
-    phoneNumbers.erase(
-        std::remove(phoneNumbers.begin(), phoneNumbers.end(), phone),
-        phoneNumbers.end());
+void PeerNode::removeChatId(const String& chatId) {
+    chatIds.erase(
+        std::remove(chatIds.begin(), chatIds.end(), chatId),
+        chatIds.end());
 }
