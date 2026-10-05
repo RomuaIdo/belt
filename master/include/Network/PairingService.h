@@ -3,20 +3,17 @@
 #include <Arduino.h>
 #include <functional>
 
-// Tracks a single in-progress pairing attempt started from the dashboard
-// (the caregiver enters a belt's MAC; master unicasts a PairRequest and
-// waits here for its PairResponse). Pure state/timing, driven by an
-// injected clock, so it stays unit-testable without real ESP-NOW traffic.
+// Manages active dashboard-initiated pairing state and timeout.
 class PairingService {
 public:
     using NowMsFn = std::function<uint32_t()>;
 
     PairingService(uint32_t confirmTimeoutMs, NowMsFn nowMs);
 
-    void start(const String& targetMac); // begins waiting for targetMac's confirmation
+    void start(const String& targetMac); // Awaits targetMac confirmation
     void stop();
-    void tick(); // auto-deactivates once confirmTimeoutMs elapses unconditionally
-    void confirm(); // call once the awaited PairResponse arrives
+    void tick(); // Deactivates on timeout expiry
+    void confirm(); // Completes pairing on PairResponse
 
     bool isActive() const { return active; }
     bool isPendingFor(const String& mac) const;

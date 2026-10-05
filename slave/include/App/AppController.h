@@ -9,8 +9,7 @@
 #include "Pairing/ChannelScanner.h"
 #include "Input/Button.h"
 
-// Slave system orchestrator: owns every subsystem and drives the firmware
-// lifecycle (setup/loop). Mirrors master/'s AppController pattern.
+// Orchestrates slave subsystems and firmware lifecycle (setup/loop).
 class AppController {
 public:
     AppController();
@@ -26,7 +25,7 @@ private:
     PairingService pairingService;
     ChannelScanner channelScanner;
 
-    // Mode 1: button-triggered broadcast search across channels.
+    // Mode 1: broadcast search across channels.
     void startBroadcastSearch();
     void sendPairingBroadcast();
 

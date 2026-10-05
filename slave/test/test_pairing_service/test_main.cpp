@@ -1,5 +1,5 @@
-// Unit tests for slave's PairingService broadcast-search state machine (fake clock, no hardware).
-// Run with: pio test -e esp32-s3-supermini-test -f test_pairing_service
+// Unit tests for slave PairingService.
+// Run: pio test -e esp32-s3-supermini-test -f test_pairing_service
 
 #include <Arduino.h>
 #include <unity.h>
@@ -51,11 +51,11 @@ void test_on_pair_response_received_is_a_no_op_outside_searching() {
     uint32_t fakeNow = 0;
     PairingService service(kSearchTimeoutMs, [&]() { return fakeNow; });
 
-    // Idle: never started searching.
+    // Idle state.
     service.onPairResponseReceived();
     TEST_ASSERT_EQUAL(static_cast<int>(PairingService::State::Idle), static_cast<int>(service.getState()));
 
-    // TimedOut: already expired.
+    // TimedOut state.
     service.startSearching();
     fakeNow = kSearchTimeoutMs;
     service.tick();
@@ -93,7 +93,7 @@ void test_remaining_ms_is_zero_outside_searching() {
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
 
     UNITY_BEGIN();
     RUN_TEST(test_start_searching_enters_searching_state);

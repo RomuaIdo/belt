@@ -1,5 +1,4 @@
-/* mock.js — dados falsos para desenvolver e demonstrar a interface sem o firmware.
-   NÃO é copiado para firmware-master/data/. Só é carregado quando MOCK = true. */
+// Mock API responses for testing without firmware (loaded when MOCK = true).
 
 const LATENCY = 300;
 
@@ -31,7 +30,7 @@ let pendentes = [
   { mac: 'C8:F0:9E:11:74:BB', recebido_em: iso(1000 * 60 * 4) },
 ];
 
-/* Depois de ~15 s aparece um novo pendente, simulando o botão de pareamento do cinto. */
+// Simulates a new pending belt pairing after 15s.
 setTimeout(() => {
   if (!pendentes.some((p) => p.mac === '9C:9C:1F:3D:20:57')
       && !dispositivos.some((d) => d.mac === '9C:9C:1F:3D:20:57')) {
@@ -39,11 +38,11 @@ setTimeout(() => {
   }
 }, 15000);
 
-/* teste-telegram percorre os cinco resultados possíveis a cada chamada. */
+// Cycles through test results on each call.
 const TEST_CYCLE = ['ok', 'chat_desconhecido', 'sem_token', 'sem_internet', 'chat_id_invalido'];
 let testIndex = 0;
 
-/* PUT confirma com o cinto quase sempre; de vez em quando falha, para exercitar o aviso. */
+// Simulates intermittent belt confirmation failures.
 let putCount = 0;
 
 const config = () => ({

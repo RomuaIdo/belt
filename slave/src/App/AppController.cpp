@@ -30,7 +30,7 @@ void AppController::setup() {
 
     masterLink = masterLinkStorage.load();
     if (masterLink.hasMac()) {
-        // Re-register so a future send() to the master works after a reboot.
+        // Register peer for future ESP-NOW transmission.
         espNow.registerPeer(masterLink.getMacAddress());
         Serial.printf("AppController: restored paired master %s\n", masterLink.getMacAddress().c_str());
     }
@@ -80,8 +80,7 @@ void AppController::onEspNowMessage(const String& senderMac, const uint8_t* payl
     const auto* msg = reinterpret_cast<const Protocol::PairingMessage*>(payload);
 
     if (msg->type == Protocol::MessageType::PairRequest) {
-        // Mode 2: master unicast directly to us — it already knows our MAC
-        // from the dashboard, so no window/state check is needed here.
+        // Mode 2: master unicast pairing request.
         espNow.registerPeer(senderMac);
         masterLink = MasterLink(senderMac);
         masterLinkStorage.save(masterLink);
@@ -93,8 +92,8 @@ void AppController::onEspNowMessage(const String& senderMac, const uint8_t* payl
     }
 
     if (msg->type == Protocol::MessageType::PairResponse) {
-        // Mode 1: confirms the master found while broadcast-searching.
-        if (!pairingService.isSearching()) return; // stray/late response
+        // Mode 1: master response to broadcast search.
+        if (!pairingService.isSearching()) return; // Ignore stale response
         espNow.registerPeer(senderMac);
         masterLink = MasterLink(senderMac);
         masterLinkStorage.save(masterLink);

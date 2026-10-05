@@ -11,13 +11,13 @@ bool Button::update(bool rawLevel, uint32_t nowMs) {
     }
 
     if (static_cast<uint32_t>(nowMs - lastEdgeMs) < debounceMs) {
-        return false; // still settling after the last transition
+        return false; // Still within debounce interval
     }
 
     if (stableState == rawLevel) {
-        return false; // already-debounced state hasn't changed
+        return false; // State unchanged
     }
 
     stableState = rawLevel;
-    return activeLow ? !rawLevel : rawLevel; // true only on a press edge, not a release
+    return activeLow ? !rawLevel : rawLevel; // True on press edge
 }

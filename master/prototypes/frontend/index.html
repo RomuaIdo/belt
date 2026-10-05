@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- ================= HOME VIEW ================= -->
+  <!-- Home view -->
   <div id="view-home" class="view">
     <header class="app-head">
       <h1>Cinto Alerta</h1>
@@ -16,13 +16,13 @@
     </header>
 
     <main class="wrap">
-      <!-- First-load / error / empty states for the whole screen -->
+      <!-- Status states -->
       <div id="home-status" class="status" hidden>
         <p id="home-status-text" class="status-text"></p>
         <button id="home-retry" type="button" class="btn btn-quiet" hidden>Try again</button>
       </div>
 
-      <!-- A. Waiting to be set up -->
+      <!-- Waiting to be set up -->
       <section id="section-pending" class="panel panel-pending" hidden aria-labelledby="pending-title">
         <div class="panel-head">
           <svg class="broadcast" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
@@ -36,7 +36,7 @@
         <ul id="pending-list" class="rows"></ul>
       </section>
 
-      <!-- B. Watching now -->
+      <!-- Watching now -->
       <section id="section-devices" class="panel panel-devices" hidden aria-labelledby="devices-title">
         <div class="panel-head">
           <h2 id="devices-title">Watching now</h2>
@@ -46,7 +46,7 @@
     </main>
   </div>
 
-  <!-- ================= FORM VIEW ================= -->
+  <!-- Form view -->
   <div id="view-form" class="view" hidden>
     <header class="app-head form-head">
       <button id="form-back" type="button" class="iconbtn" aria-label="Back to belt list">
@@ -147,7 +147,7 @@
     </main>
   </div>
 
-  <!-- ================= CONFIRM DIALOG ================= -->
+  <!-- Confirm dialog -->
   <dialog id="confirm" class="confirm">
     <form method="dialog">
       <p id="confirm-text" class="confirm-text"></p>
@@ -158,7 +158,7 @@
     </form>
   </dialog>
 
-  <!-- ================= TOAST ================= -->
+  <!-- Toast -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script type="module" src="app.js"></script>

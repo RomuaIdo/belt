@@ -1,13 +1,13 @@
 const MOCK = true;
 const API_BASE = '';
 
-/* Em MOCK, todas as chamadas são atendidas por mock.js (não vai para o firmware). */
+// In MOCK mode, requests are handled by mock.js.
 let mockApi = null;
 if (MOCK) {
   ({ mockApi } = await import('./mock.js'));
 }
 
-/* ---------- regras de domínio ---------- */
+// Domain rules
 
 const CHAT_RE = /^-?\d{6,15}$/;
 const MAC_RE = /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/;
@@ -33,7 +33,7 @@ const TEST_MESSAGES = {
   sem_internet: ['The master has no internet connection. Testing is only possible after configuring Wi-Fi.', 'bad'],
 };
 
-/* ---------- camada de API ---------- */
+// API layer
 
 async function api(method, path, body) {
   if (MOCK) return mockApi(method, path, body);
@@ -52,7 +52,7 @@ async function api(method, path, body) {
   return data;
 }
 
-/* ---------- utilidades ---------- */
+// Utilities
 
 function h(tag, attrs = {}, ...kids) {
   const node = document.createElement(tag);
@@ -91,7 +91,7 @@ function toast(msg) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
 }
 
-/* ---------- diálogo de confirmação ---------- */
+// Confirmation dialog
 
 function askConfirm(text, okLabel = 'Confirm') {
   return new Promise((resolve) => {
@@ -104,7 +104,7 @@ function askConfirm(text, okLabel = 'Confirm') {
   });
 }
 
-/* ---------- troca de telas ---------- */
+// View switching
 
 function showView(name) {
   $('view-home').hidden = name !== 'home';
@@ -112,7 +112,7 @@ function showView(name) {
   window.scrollTo(0, 0);
 }
 
-/* ================= TELA INICIAL ================= */
+// Home view
 
 let configuredMacs = new Set();
 let knownPendingMacs = new Set();
@@ -235,7 +235,7 @@ async function removeDevice(d) {
   }
 }
 
-/* ---------- polling da lista de pendentes ---------- */
+// Pending devices polling
 
 async function refreshPending() {
   if (!$('view-form').hidden) return;
@@ -244,7 +244,7 @@ async function refreshPending() {
     const pendentes = (pend.pendentes || [])
       .filter((p) => !configuredMacs.has(p.mac.toUpperCase()));
 
-    // se a tela está em estado vazio/erro e agora chegou algo, recarrega tudo
+    // Reload full view if empty/error state now has items
     if (!$('home-status').hidden) {
       if (pendentes.length) loadHome();
       return;
@@ -252,14 +252,14 @@ async function refreshPending() {
     renderPending(pendentes, { animateNew: true });
     knownPendingMacs = new Set(pendentes.map((p) => p.mac.toUpperCase()));
   } catch (e) {
-    /* falha de polling é silenciosa: não destrói a tela */
+    // Silently ignore polling errors
   }
 }
 
-/* ================= FORMULÁRIO ================= */
+// Form view
 
 const form = $('device-form');
-let editing = null;      // dispositivo em edição
+let editing = null;      // Device being edited
 let isNewPairing = false;
 let formDirty = false;
 const touched = new Set();
@@ -322,7 +322,7 @@ function collapseHelp() {
   $('f-chat-help-toggle').setAttribute('aria-expanded', 'false');
 }
 
-/* ---------- validação ---------- */
+// Validation
 
 function fieldErrors() {
   const errs = {};
@@ -366,7 +366,7 @@ function validate() {
   return valid;
 }
 
-/* ---------- contador e pré-visualização da mensagem ---------- */
+// Counter and preview
 
 function updateCounter() {
   const len = fMsg.value.trim().length;
@@ -398,7 +398,7 @@ function updatePreview() {
   }
 }
 
-/* ---------- inserir placeholder no cursor ---------- */
+// Insert placeholder at cursor
 
 function insertAtCursor(el, text) {
   const start = el.selectionStart ?? el.value.length;
@@ -410,7 +410,7 @@ function insertAtCursor(el, text) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-/* ---------- teste do Telegram ---------- */
+// Telegram test
 
 function showTestResult(code) {
   const [msg, kind] = TEST_MESSAGES[code] || TEST_MESSAGES.chat_desconhecido;
@@ -436,7 +436,7 @@ async function sendTest() {
   }
 }
 
-/* ---------- salvar ---------- */
+// Save
 
 function collect() {
   return {
@@ -478,7 +478,7 @@ async function onSubmit(ev) {
   }
 }
 
-/* ---------- sair do formulário ---------- */
+// Exit form
 
 async function attemptLeave() {
   if (formDirty) {
@@ -489,7 +489,7 @@ async function attemptLeave() {
   loadHome();
 }
 
-/* ================= LISTENERS ================= */
+// Event listeners
 
 form.addEventListener('submit', onSubmit);
 $('form-back').addEventListener('click', attemptLeave);
@@ -530,6 +530,6 @@ setInterval(() => {
   if (!document.hidden && !$('view-home').hidden) refreshPending();
 }, 3000);
 
-/* ================= START ================= */
+// Start
 
 loadHome({ initial: true });

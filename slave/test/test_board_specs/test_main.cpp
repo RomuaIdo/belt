@@ -1,14 +1,12 @@
-// Quick hardware-spec diagnostic, not a real unit test. FLASH THIS FIRST, before trusting any
-// other slave code, to confirm the ESP32-S3FH4R2's board_build settings (4 MB flash, 2 MB PSRAM).
-// Run with: pio test -e esp32-s3-supermini-test -f test_board_specs
+// Diagnostic: validates ESP32-S3FH4R2 hardware specifications (4 MB flash, 2 MB PSRAM).
+// Run: pio test -e esp32-s3-supermini-test -f test_board_specs
 
 #include <Arduino.h>
 #include <unity.h>
 
 namespace {
 constexpr uint32_t kExpectedMinFlashBytes = 4UL * 1024 * 1024; // 4 MB
-// Nominal 2 MB (2,097,152 B); leave comfortable slack below it, same
-// reasoning as master's 8 MB threshold being set under its nominal value.
+// Minimum threshold for 2 MB nominal PSRAM.
 constexpr uint32_t kExpectedMinPsramBytes = 2UL * 1000 * 1000;
 } // namespace
 
@@ -55,7 +53,7 @@ void test_psram_size_is_at_least_2mb() {
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
     Serial.begin(115200);
 
     printBoardSpecs();

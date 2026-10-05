@@ -1,6 +1,5 @@
-// Persistence validation for CallQueueStorage across a real reboot (ESP.restart()), including a simulated power-loss.
-// Run with: pio test -e esp32-s3-devkitc-1-test -f test_call_queue_storage
-// Note: Requires a UART bridge (e.g., DevKitC-1). Native USB-CDC drops the Serial link on reset.
+// Validates CallQueueStorage persistence across ESP.restart() with power-loss simulation.
+// Run: pio test -e esp32-s3-devkitc-1-test -f test_call_queue_storage (requires UART bridge).
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -51,7 +50,7 @@ Notification makeNotificationB() {
     return Notification(eventIdB(), 1700000100, "AA:BB:CC:DD:EE:02", "Fall alert B", chatIds);
 }
 
-// Simulates power loss mid-write: a truncated, unclosed JSON prefix.
+// Simulates power loss with a truncated JSON file.
 void writeCorruptedQueueFile() {
     File f = LittleFS.open(pathForEvent(corruptEventId()), "w");
     if (f) {
@@ -85,8 +84,7 @@ void clearRebootMarker() {
     if (LittleFS.exists(kRebootMarkerPath)) LittleFS.remove(kRebootMarkerPath);
 }
 
-// Wipes every file in the test queue directory, valid, corrupted or
-// orphaned, so each `pio test` run starts from a clean slate.
+// Cleans test queue directory.
 void resetQueueDir() {
     for (const auto& n : storage->loadAllPending()) storage->remove(n.getEventId());
     storage->purgeInvalidEntries();
@@ -94,7 +92,7 @@ void resetQueueDir() {
 
 } // namespace
 
-// ---- pre-reboot write phase ----
+// Pre-reboot write phase
 
 void test_write_phase_before_reboot_succeeded() {
     TEST_ASSERT_EQUAL_STRING_MESSAGE(kMarkerPhaseOk, writePhaseMarker.c_str(),
@@ -106,7 +104,7 @@ void test_event_files_use_the_expected_naming_convention() {
     TEST_ASSERT_TRUE(LittleFS.exists(pathForEvent(eventIdB())));
 }
 
-// ---- reconstructing the queue after reboot ----
+// Post-reboot reconstruction
 
 void test_saved_queue_uses_pending_chat_ids_as_strings() {
     const String eventIds[] = {eventIdA(), eventIdB()};
@@ -129,7 +127,7 @@ void test_saved_queue_uses_pending_chat_ids_as_strings() {
 
 void test_reload_after_reboot_restores_only_the_valid_events() {
     auto pending = storage->loadAllPending();
-    // 2 valid events; the truncated third file must be silently skipped.
+    // Truncated file must be skipped.
     TEST_ASSERT_EQUAL_UINT32(2, static_cast<uint32_t>(pending.size()));
 }
 
@@ -146,8 +144,7 @@ void test_reload_after_reboot_preserves_partial_update_progress() {
 
     TEST_ASSERT_NOT_NULL_MESSAGE(found, "event A missing after reboot");
     if (found != nullptr) {
-        // updatePending() ran before the simulated crash and already marked
-        // the first chat as sent; that partial progress must survive.
+        // Partial progress must persist across reboot.
         TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(found->getPendingChatIds().size()));
         TEST_ASSERT_EQUAL_STRING("-1001234567890", found->getPendingChatIds()[0].c_str());
         TEST_ASSERT_FALSE(found->isCompleted());
@@ -173,21 +170,19 @@ void test_reload_after_reboot_restores_event_b_untouched() {
 }
 
 void test_queue_size_counts_every_file_including_the_corrupted_one() {
-    // getQueueSize() is a cheap directory listing (no JSON parsing), so it also counts the unparseable file.
+    // getQueueSize counts raw files without parsing.
     TEST_ASSERT_EQUAL_UINT32(3, static_cast<uint32_t>(storage->getQueueSize()));
 }
 
 void test_purge_invalid_entries_removes_only_the_corrupted_file() {
-    // A and B are still genuinely pending at this point; only the truncated
-    // third file should be considered garbage.
+    // Only the corrupted file should be purged.
     TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(storage->purgeInvalidEntries()));
 
     TEST_ASSERT_FALSE(LittleFS.exists(pathForEvent(corruptEventId())));
     TEST_ASSERT_EQUAL_UINT32(2, static_cast<uint32_t>(storage->getQueueSize()));
     TEST_ASSERT_EQUAL_UINT32(2, static_cast<uint32_t>(storage->loadAllPending().size()));
 
-    // Purging again finds nothing left to remove: it's safe to call
-    // repeatedly (e.g. on every boot) without touching valid entries.
+    // Purging is idempotent.
     TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(storage->purgeInvalidEntries()));
 }
 
@@ -217,8 +212,7 @@ void test_purge_invalid_entries_removes_orphaned_completed_file() {
     Notification orphan(orphanEventId(), 1700000300, "AA:BB:CC:DD:EE:03", "already delivered", noPendingChatIds);
     TEST_ASSERT_TRUE(storage->updatePending(orphan));
 
-    // loadAllPending() already excludes it (nothing left to deliver), but
-    // the file is still sitting on disk, unlike a properly-removed event.
+    // Orphaned completed files remain on disk until purged.
     TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(storage->loadAllPending().size()));
     TEST_ASSERT_EQUAL_UINT32(2, static_cast<uint32_t>(storage->getQueueSize()));
 
@@ -226,7 +220,7 @@ void test_purge_invalid_entries_removes_orphaned_completed_file() {
 
     TEST_ASSERT_FALSE(LittleFS.exists(pathForEvent(orphanEventId())));
     TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(storage->getQueueSize()));
-    // Event A, still genuinely pending, must be untouched by the purge.
+    // Pending events remain untouched.
     TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(storage->loadAllPending().size()));
 }
 
@@ -235,7 +229,7 @@ void test_remove_on_missing_event_is_idempotent() {
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
     Serial.begin(115200);
 
     if (!LittleFS.begin(true)) {
@@ -270,14 +264,13 @@ void setup() {
         Serial.flush();
         delay(2000);
         ESP.restart();
-        return; // unreachable, kept for clarity
+        return;
     }
 
     writePhaseMarker = readRebootMarker();
 
     if (writePhaseMarker != kMarkerPhaseOk && writePhaseMarker != kMarkerPhaseFailed) {
-        // Flash remnants from an interrupted run (pio test doesn't wipe LittleFS).
-        // Treat unknown markers as stale data, clean up, and restart phase 1.
+        // Reset state on stale reboot marker.
         Serial.printf("Stale/invalid reboot marker found (%s); resetting test state and re-running phase 1...\n",
                        writePhaseMarker.c_str());
         resetQueueDir();
@@ -285,7 +278,7 @@ void setup() {
         Serial.flush();
         delay(500);
         ESP.restart();
-        return; // unreachable, kept for clarity
+        return;
     }
 
     Serial.println("\n=== PHASE 2: after reboot, validating the queue reads back without corruption ===");

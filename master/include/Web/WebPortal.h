@@ -10,27 +10,20 @@
 #include "Domain/SystemConfig.h"
 #include "Storage/ConfigStorage.h"
 
-// Master's configuration page: serves the frontend from LittleFS plus the
-// JSON API it uses (Wi-Fi, Telegram token, belts, pairing). Runs entirely on
-// the loop() task, so it shares `config` with AppController without any
-// concurrency concerns. Routes that talk to Telegram, or that wait on a new
-// belt's ESP-NOW confirmation, block loop() for a few seconds.
+// Web portal serving LittleFS configuration frontend and JSON API.
 class WebPortal {
 public:
     using PendingPairingsProvider = std::function<std::vector<PendingPairing>()>;
     using DiscardPendingCallback = std::function<void(const String& mac)>;
-    // Validates and decides how to persist a belt. For a MAC never seen
-    // before, this triggers (and waits on) the dashboard-initiated pairing
-    // handshake (mode 2) before saving; an already-known or pending MAC
-    // saves directly. Returns false if a new belt never confirmed in time.
+    // Callback to persist belt (triggers mode 2 handshake for new MACs).
     using SaveDeviceCallback = std::function<bool(const PeerNode& peer)>;
 
-    // `onWifiChanged` runs after a new SSID/password is saved, to reconnect.
+    // Invoked after saving new Wi-Fi credentials to reconnect.
     WebPortal(SystemConfig& config, ConfigStorage& configStorage,
               std::function<void()> onWifiChanged);
 
-    void begin();   // registers routes and starts the server on port 80
-    void handle();  // services pending requests; call every loop()
+    void begin();   // Registers routes and starts HTTP server on port 80
+    void handle();  // Processes incoming client requests in loop()
 
     void setListPendingPairings(PendingPairingsProvider callback) { listPendingPairings = std::move(callback); }
     void setOnDiscardPending(DiscardPendingCallback callback) { onDiscardPending = std::move(callback); }
@@ -39,15 +32,12 @@ public:
 private:
     void serveFile(const char* path, const char* contentType);
 
-    // {ok:false, erro, mensagem} response. Expected Telegram outcomes
-    // (bad token, no internet...) use code 200 so the frontend treats them
-    // as results rather than failures.
+    // Sends JSON response ({ok:false, erro, mensagem}).
     void sendJson(int code, const JsonDocument& doc);
     void sendError(int code, const char* error, const String& message);
     bool readBody(JsonDocument& doc);
 
-    // Checks what Telegram needs (token, Wi-Fi, clock). Responds with the
-    // matching error and returns false if anything is missing.
+    // Validates Telegram prerequisites (token, Wi-Fi, clock).
     bool requireTelegram(const String& token);
 
     void handleStatus();

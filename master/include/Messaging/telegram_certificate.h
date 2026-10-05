@@ -1,10 +1,6 @@
 #pragma once
 
-// Trusted root for validating api.telegram.org (TLS without setInsecure).
-// Go Daddy Root Certificate Authority - G2, captured from the server's chain
-// on 2026-10-03 (openssl s_client -showcerts). Re-check this if Telegram
-// rotates its CA. Valid until 2037-12-31; SHA-256
-// 45:14:0B:32:47:EB:9C:C8:C5:B4:F0:D7:B5:30:91:F7:32:92:08:9E:6E:5A:63:E2:74:9D:D3:AC:A9:19:8E:DA
+// Trusted root CA for api.telegram.org (Go Daddy Root CA - G2).
 constexpr const char TELEGRAM_ROOT_CA[] = R"CERT(
 -----BEGIN CERTIFICATE-----
 MIIDxTCCAq2gAwIBAgIBADANBgkqhkiG9w0BAQsFADCBgzELMAkGA1UEBhMCVVMx

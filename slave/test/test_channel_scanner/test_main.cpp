@@ -1,5 +1,5 @@
-// Unit tests for ChannelScanner's pure channel-cycling timing (fake clock, no radio).
-// Run with: pio test -e esp32-s3-supermini-test -f test_channel_scanner
+// Unit tests for ChannelScanner timing.
+// Run: pio test -e esp32-s3-supermini-test -f test_channel_scanner
 
 #include <Arduino.h>
 #include <unity.h>
@@ -39,7 +39,7 @@ void test_tick_advances_exactly_once_per_dwell_period() {
     TEST_ASSERT_TRUE(scanner.tick());
     TEST_ASSERT_EQUAL_UINT8(kMinChannel + 1, scanner.currentChannel());
 
-    // No further advance until another full dwell period passes.
+    // No advance until full dwell period passes.
     fakeNow += kDwellMs - 1;
     TEST_ASSERT_FALSE(scanner.tick());
 }
@@ -65,14 +65,14 @@ void test_reset_restarts_the_dwell_timer() {
     ChannelScanner scanner(kMinChannel, kMaxChannel, kDwellMs, [&]() { return fakeNow; });
 
     scanner.reset();
-    fakeNow = kDwellMs - 1; // about to advance
-    scanner.reset();        // restart: timer resets too
+    fakeNow = kDwellMs - 1;
+    scanner.reset();
     TEST_ASSERT_FALSE(scanner.tick());
     TEST_ASSERT_EQUAL_UINT8(kMinChannel, scanner.currentChannel());
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
 
     UNITY_BEGIN();
     RUN_TEST(test_reset_starts_at_min_channel);

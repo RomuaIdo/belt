@@ -5,12 +5,12 @@
 namespace AppConfig {
 
 // Pinout
-constexpr uint8_t kPairingButtonPin = 4; // TODO: Confirm against final PCB schematic
+constexpr uint8_t kPairingButtonPin = 4; // Target PCB pin
 
 // Timing
 constexpr uint32_t kButtonDebounceMs = 30;
-constexpr uint32_t kPairingSearchTimeoutMs = 60000; // overall bound for the broadcast search (mode 1)
-constexpr uint32_t kPairingChannelDwellMs = 300;    // time spent broadcasting on each channel before moving on
+constexpr uint32_t kPairingSearchTimeoutMs = 60000; // Search timeout (mode 1)
+constexpr uint32_t kPairingChannelDwellMs = 300;    // Dwell time per channel
 
 // Radio
 constexpr uint8_t kPairingMinChannel = 1;

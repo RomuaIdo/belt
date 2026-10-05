@@ -1,6 +1,5 @@
-// Unit tests for Button's debounce logic (synthetic rawLevel/nowMs sequences, no GPIO).
-// We intend to implement a hardware debounce circuit. But this is a fallback.
-// Run with: pio test -e esp32-s3-supermini-test -f test_button
+// Unit tests for Button debounce logic.
+// Run: pio test -e esp32-s3-supermini-test -f test_button
 
 #include <Arduino.h>
 #include <unity.h>
@@ -15,30 +14,30 @@ void test_contact_bounce_inside_debounce_window_never_fires() {
     Button button(kDebounceMs, /*activeLow=*/true);
     uint32_t t = 0;
 
-    // Idle (HIGH=true) -> flicker rapidly within the debounce window.
+    // Rapid flicker during debounce window.
     TEST_ASSERT_FALSE(button.update(true, t));
-    TEST_ASSERT_FALSE(button.update(false, t += 5));  // bounce
-    TEST_ASSERT_FALSE(button.update(true, t += 5));   // bounce
-    TEST_ASSERT_FALSE(button.update(false, t += 5));  // bounce, still well under 30ms settle
-    TEST_ASSERT_FALSE(button.update(false, t += 5));  // still settling (only 5ms since last edge)
+    TEST_ASSERT_FALSE(button.update(false, t += 5));
+    TEST_ASSERT_FALSE(button.update(true, t += 5));
+    TEST_ASSERT_FALSE(button.update(false, t += 5));
+    TEST_ASSERT_FALSE(button.update(false, t += 5));
 }
 
 void test_clean_press_fires_exactly_once() {
     Button button(kDebounceMs, /*activeLow=*/true);
     uint32_t t = 0;
 
-    TEST_ASSERT_FALSE(button.update(true, t)); // idle, high
+    TEST_ASSERT_FALSE(button.update(true, t));
     t += 100;
-    TEST_ASSERT_FALSE(button.update(true, t)); // still idle, already stable: no edge
+    TEST_ASSERT_FALSE(button.update(true, t));
 
-    // Press: level drops low and stays there past the debounce window.
+    // Level drops LOW and settles past debounce window.
     t += 1;
-    TEST_ASSERT_FALSE(button.update(false, t)); // edge just happened, not yet settled
+    TEST_ASSERT_FALSE(button.update(false, t));
     t += kDebounceMs;
-    TEST_ASSERT_TRUE(button.update(false, t)); // settled low -> fires once
+    TEST_ASSERT_TRUE(button.update(false, t));
 
     t += 10;
-    TEST_ASSERT_FALSE(button.update(false, t)); // still held, no repeat firing
+    TEST_ASSERT_FALSE(button.update(false, t));
 }
 
 void test_press_shorter_than_debounce_never_fires() {
@@ -47,45 +46,45 @@ void test_press_shorter_than_debounce_never_fires() {
 
     button.update(true, t);
     t += 5;
-    button.update(false, t); // brief dip
-    t += 10;                  // only 10ms elapsed, under the 30ms debounce
-    TEST_ASSERT_FALSE(button.update(true, t)); // bounced back to idle before settling
+    button.update(false, t);
+    t += 10;
+    TEST_ASSERT_FALSE(button.update(true, t));
 }
 
 void test_release_then_repress_fires_a_second_time() {
     Button button(kDebounceMs, /*activeLow=*/true);
     uint32_t t = 0;
 
-    button.update(true, t); // idle
+    button.update(true, t);
     t += kDebounceMs;
     button.update(false, t);
     t += kDebounceMs;
-    TEST_ASSERT_TRUE(button.update(false, t)); // first press fires
+    TEST_ASSERT_TRUE(button.update(false, t));
 
     t += 1;
-    button.update(true, t); // release
+    button.update(true, t);
     t += kDebounceMs;
-    TEST_ASSERT_FALSE(button.update(true, t)); // release settling, not a press
+    TEST_ASSERT_FALSE(button.update(true, t));
 
     t += 1;
-    button.update(false, t); // second press
+    button.update(false, t);
     t += kDebounceMs;
-    TEST_ASSERT_TRUE(button.update(false, t)); // fires again
+    TEST_ASSERT_TRUE(button.update(false, t));
 }
 
 void test_active_high_polarity() {
     Button button(kDebounceMs, /*activeLow=*/false);
     uint32_t t = 0;
 
-    button.update(false, t); // idle is LOW for an active-high button
+    button.update(false, t);
     t += kDebounceMs;
-    button.update(true, t); // press: level goes HIGH
+    button.update(true, t);
     t += kDebounceMs;
     TEST_ASSERT_TRUE(button.update(true, t));
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
 
     UNITY_BEGIN();
     RUN_TEST(test_contact_bounce_inside_debounce_window_never_fires);

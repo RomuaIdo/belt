@@ -1,5 +1,4 @@
-// Run with: pio test -e esp32-s3-devkitc-1-test -f test_alert_message
-// These tests need no Wi-Fi, credentials, or flash access.
+// Run: pio test -e esp32-s3-devkitc-1-test -f test_alert_message
 
 #include <Arduino.h>
 #include <unity.h>
@@ -7,7 +6,7 @@
 #include "Messaging/alert_message.h"
 
 namespace {
-// 2026-09-09 14:32:00 UTC; with TZ=UTC0 that's 14:32 on 09/09/2026.
+// 2026-09-09 14:32:00 UTC
 constexpr time_t kEventTime = 1788964320;
 
 void useUtc() {

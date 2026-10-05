@@ -6,7 +6,7 @@ PeerNode::PeerNode(String macAddress, String alias)
 
 void PeerNode::addChatId(const String& chatId) {
     for (const auto& existing : chatIds) {
-        if (existing == chatId) return; // avoid duplicate recipients
+        if (existing == chatId) return; // Avoid duplicates
     }
     chatIds.push_back(chatId);
 }

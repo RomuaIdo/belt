@@ -1,6 +1,5 @@
-// Unit tests for master's PairingService: tracks one dashboard-initiated pairing attempt
-// waiting for a specific MAC's confirmation (fake clock, no hardware).
-// Run with: pio test -e esp32-s3-devkitc-1-test -f test_pairing_service
+// Unit tests for master PairingService.
+// Run: pio test -e esp32-s3-devkitc-1-test -f test_pairing_service
 
 #include <Arduino.h>
 #include <unity.h>
@@ -96,7 +95,7 @@ void test_remaining_ms_counts_down_to_zero() {
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
 
     UNITY_BEGIN();
     RUN_TEST(test_start_becomes_active_and_pending_for_the_target_mac);

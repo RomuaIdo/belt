@@ -1,6 +1,5 @@
-// Persistence config validation across a real reboot (ESP.restart()).
-// Usage: pio test -e esp32-s3-devkitc-1-test -f test_config_storage
-// Note: Requires a UART bridge (e.g., DevKitC-1). Native USB-CDC drops the Serial link on reset.
+// Validates SystemConfig persistence across ESP.restart().
+// Run: pio test -e esp32-s3-devkitc-1-test -f test_config_storage (requires UART bridge).
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -65,14 +64,14 @@ void clearRebootMarker() {
 
 } // namespace
 
-// ---- pre-reboot write phase ----
+// Pre-reboot write phase
 
 void test_write_phase_before_reboot_succeeded() {
     TEST_ASSERT_EQUAL_STRING_MESSAGE(kMarkerSaveOk, writePhaseMarker.c_str(),
                                        "ConfigStorage::save() reported failure before the reboot");
 }
 
-// ---- reconstructing the config after reboot ----
+// Post-reboot reconstruction
 
 void test_saved_config_uses_chat_ids_as_strings() {
     File file = LittleFS.open(kTestConfigPath, "r");
@@ -123,7 +122,7 @@ void test_reload_after_reboot_restores_peers() {
     TEST_ASSERT_NOT_NULL_MESSAGE(peerB, "peer AA:BB:CC:DD:EE:02 missing after reboot");
     if (peerB != nullptr) {
         TEST_ASSERT_EQUAL_STRING("Bob", peerB->getAlias().c_str());
-        TEST_ASSERT_EQUAL_STRING("", peerB->getMessage().c_str()); // empty = default message
+        TEST_ASSERT_EQUAL_STRING("", peerB->getMessage().c_str()); // Default message
         TEST_ASSERT_EQUAL_UINT32(1, static_cast<uint32_t>(peerB->getChatIds().size()));
         TEST_ASSERT_EQUAL_STRING("5000000000", peerB->getChatIds()[0].c_str());
     }
@@ -143,7 +142,7 @@ void test_clear_removes_persisted_file() {
 }
 
 void setup() {
-    delay(2000); // delay for the serial monitor to connect after a reset
+    delay(2000); // Allow serial monitor to attach
     Serial.begin(115200);
 
     if (!LittleFS.begin(true)) {
