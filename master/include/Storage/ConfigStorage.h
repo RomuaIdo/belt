@@ -3,8 +3,7 @@
 #include <Arduino.h>
 #include "Domain/SystemConfig.h"
 
-// Uses LittleFS to maintain a JSON file with all the configs in the flash.
-// Its an interface to load and save the SystemConfig object to the flash memory.
+// Loads and saves SystemConfig to LittleFS as JSON.
 class ConfigStorage {
 public:
     explicit ConfigStorage(String filePath);

@@ -1,5 +1,4 @@
-/* Cinto Alerta — front end de configuração do master.
-   Servido pelo ESP32-S3 a partir do LittleFS. Sem recursos externos, sem framework. */
+/* Master configuration UI served from LittleFS. */
 
 :root {
   --bg: #eef1ef;
@@ -36,7 +35,7 @@ body {
 
 h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
 
-/* ---------- layout ---------- */
+/* Layout */
 
 .view { min-height: 100vh; padding-bottom: 48px; }
 
@@ -64,7 +63,7 @@ h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
 }
 .form-head h1 { font-size: 1.1875rem; }
 
-/* ---------- panels ---------- */
+/* Panels */
 
 .panel {
   background: var(--surface);
@@ -97,7 +96,7 @@ h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
   border-radius: 999px;
 }
 
-/* ---------- rows ---------- */
+/* Rows */
 
 .rows { list-style: none; margin: 0; padding: 0; }
 .rows > li { padding: 16px; border-top: 1px solid var(--line); }
@@ -139,7 +138,7 @@ h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
   gap: 8px;
 }
 
-/* one gentle pulse when a pending row first arrives */
+/* Pulse animation on arrival */
 @keyframes arrive {
   from { background: var(--ochre-tint); }
   to   { background: transparent; }
@@ -149,7 +148,7 @@ h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
   .rows > li.just-arrived { animation: none; }
 }
 
-/* ---------- buttons ---------- */
+/* Buttons */
 
 .btn {
   font: inherit;
@@ -195,7 +194,7 @@ h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
   outline-offset: 2px;
 }
 
-/* ---------- whole-screen status ---------- */
+/* Status */
 
 .status {
   margin-top: 40px;
@@ -205,7 +204,7 @@ h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
 .status-text { margin: 0 auto 16px; max-width: 40ch; }
 .status.is-error .status-text { color: var(--rust); }
 
-/* ---------- form ---------- */
+/* Form */
 
 .field { margin-top: 22px; }
 .field:first-of-type { margin-top: 8px; }
@@ -252,7 +251,7 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
   padding: 12px 14px;
 }
 
-/* disclosure ("How do I get this number?") */
+/* Disclosure */
 .disclosure {
   margin-top: 8px;
   padding: 4px 0;
@@ -323,7 +322,7 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
 }
 .preview-text { margin: 0; white-space: pre-wrap; max-width: 60ch; }
 
-/* toggle */
+/* Toggle */
 .field-toggle { margin-top: 26px; }
 .switch { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
 .switch > input {
@@ -367,7 +366,7 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
 .form-actions .btn-primary { flex: 1; }
 .save-state { margin: 12px 0 0; color: var(--ink-soft); font-size: 0.9375rem; }
 
-/* banner */
+/* Banner */
 .banner {
   margin-top: var(--gap);
   padding: 12px 14px;
@@ -376,7 +375,7 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
 }
 .banner-warn { background: var(--ochre-tint); color: #7a4f12; }
 
-/* ---------- confirm dialog ---------- */
+/* Confirm dialog */
 
 .confirm {
   border: 1px solid var(--line);
@@ -390,7 +389,7 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
 .confirm-text { margin: 0 0 18px; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
-/* ---------- toast ---------- */
+/* Toast */
 
 .toast {
   position: fixed;
@@ -406,7 +405,7 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
   box-shadow: 0 6px 20px rgba(27, 36, 32, 0.25);
 }
 
-/* ---------- home actions and settings ---------- */
+/* Home actions and settings */
 
 .app-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .iconbtn-end { margin-left: 0; margin-right: -10px; }
@@ -427,7 +426,7 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
   border-radius: 4px;
 }
 
-/* lists of tappable choices: Wi-Fi networks and Telegram conversations */
+/* Choice lists: Wi-Fi networks and Telegram chats */
 .net-list, .chat-list { list-style: none; margin: 12px 0 0; padding: 0; }
 .net-list li, .chat-list li { border-top: 1px solid var(--line); }
 .net-list li:first-child, .chat-list li:first-child { border-top: 0; }
@@ -473,7 +472,7 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
 
 .dialog-gap { margin-top: 18px; }
 
-/* ---------- wider screens ---------- */
+/* Responsive */
 
 @media (min-width: 600px) {
   .panel { border-left-width: 4px; }

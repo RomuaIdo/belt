@@ -1,6 +1,5 @@
-// Unit tests for the pure in-memory domain model: PeerNode and SystemConfig.
-// No flash/LittleFS access here — see test_config_storage for persistence.
-// Run with: pio test -e esp32-s3-devkitc-1-test -f test_domain_models
+// Unit tests for PeerNode and SystemConfig domain models.
+// Run: pio test -e esp32-s3-devkitc-1-test -f test_domain_models
 
 #include <Arduino.h>
 #include <unity.h>
@@ -11,7 +10,7 @@
 void test_peernode_add_chat_avoids_duplicates() {
     PeerNode peer("AA:BB:CC:DD:EE:FF", "Test");
     peer.addChatId("-1001234567890");
-    peer.addChatId("-1001234567890"); // duplicate, must be ignored
+    peer.addChatId("-1001234567890"); // Duplicate ignored
     peer.addChatId("5000000000");
 
     TEST_ASSERT_EQUAL_UINT32(2, static_cast<uint32_t>(peer.getChatIds().size()));
@@ -83,7 +82,7 @@ void test_systemconfig_remove_peer() {
 
     TEST_ASSERT_TRUE(config.removePeer("11:22:33:44:55:66"));
     TEST_ASSERT_NULL(config.findPeerByMac("11:22:33:44:55:66"));
-    TEST_ASSERT_FALSE(config.removePeer("11:22:33:44:55:66")); // already gone
+    TEST_ASSERT_FALSE(config.removePeer("11:22:33:44:55:66")); // Already removed
 }
 
 void test_systemconfig_is_configured_requires_wifi_and_token() {
@@ -98,7 +97,7 @@ void test_systemconfig_is_configured_requires_wifi_and_token() {
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
 
     UNITY_BEGIN();
     RUN_TEST(test_peernode_add_chat_avoids_duplicates);
