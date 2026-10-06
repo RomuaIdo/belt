@@ -149,7 +149,14 @@ If the internet connection is down when an alert occurs, the base **stores the o
 
 Refer to the [master guide](master/README.md) to build components, run tests, and open the interface locally.
 
----
+PlatformIO project (Arduino framework) implementing the master station: an always-on Wi-Fi
+AP+STA with a config page served from LittleFS (`master/frontend/`), ESP-NOW pairing and
+alert reception, asynchronous Telegram sends on FreeRTOS tasks with retry/backoff, and a
+power-loss-safe retry queue on LittleFS. The domain model, storage, network and messaging
+layers are covered by the Unity test suites under `master/test/`; see `master/README.md`
+for build/flash/test instructions.
+
+## Slave firmware (`slave/`)
 
 ## What this project is not
 
@@ -160,7 +167,16 @@ Refer to the [master guide](master/README.md) to build components, run tests, an
 - Relies on electrical power in the home, a working internet connection, and a caregiver with an accessible smartphone.
 - **Does not replace human presence.** It reduces the time until help arrives; it does not eliminate the risk of falling.
 
----
+- `frontend/` — master configuration UI mockup (plain HTML/CSS/JS, meant to eventually be
+  served from LittleFS). `app.js` starts with `const MOCK = true`: every call is served by
+  `mock.js` (fake data, simulated latency). Run it locally with:
+  ```bash
+  cd master/prototypes/frontend
+  python -m http.server 8000    # or: python3 -m http.server 8000
+  # open http://localhost:8000
+  ```
+- `telegram_call.cpp` — standalone prototype for the Telegram Bot API HTTP call, independent
+  from `master/src/Messaging/TelegramTask.cpp`.
 
 <div align="center">
 

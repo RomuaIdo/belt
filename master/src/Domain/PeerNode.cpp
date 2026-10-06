@@ -6,13 +6,11 @@ PeerNode::PeerNode(String macAddress, String alias)
 
 void PeerNode::addChatId(const String& chatId) {
     for (const auto& existing : chatIds) {
-        if (existing == chatId) return; // avoid duplicate recipients
+        if (existing == chatId) return; // Avoid duplicates
     }
     chatIds.push_back(chatId);
 }
 
 void PeerNode::removeChatId(const String& chatId) {
-    chatIds.erase(
-        std::remove(chatIds.begin(), chatIds.end(), chatId),
-        chatIds.end());
+    chatIds.erase(std::remove(chatIds.begin(), chatIds.end(), chatId), chatIds.end());
 }

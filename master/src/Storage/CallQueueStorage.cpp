@@ -4,8 +4,7 @@
 
 namespace {
 
-// Attempts to reconstruct a Notification from a queue file's raw
-// content.
+// Parses a Notification from raw JSON queue content.
 bool tryParseNotification(File& entry, Notification& out) {
     JsonDocument doc;
     if (deserializeJson(doc, entry)) return false;
@@ -64,10 +63,7 @@ bool CallQueueStorage::enqueue(const Notification& notification) const {
 }
 
 bool CallQueueStorage::updatePending(const Notification& notification) const {
-    // Same on-disk representation as enqueue(): overwrite the event's file
-    // with the new (shorter) pendingChatIds list. Deciding when an event is
-    // done and should be removed instead is the caller's job (see
-    // QueueWorker), not this storage layer's.
+    // Overwrites event file with updated pending chat IDs list.
     return writeToFile(notification);
 }
 
@@ -103,8 +99,7 @@ size_t CallQueueStorage::purgeInvalidEntries() const {
     File dir = LittleFS.open(queueDirPath);
     if (!dir || !dir.isDirectory()) return 0;
 
-    // Collect the paths to delete first, then delete after closing the
-    // directory listing: mutating a directory mid-iteration isn't safe.
+    // Collect paths first; mutating a directory during iteration is unsafe.
     std::vector<String> pathsToRemove;
 
     File entry = dir.openNextFile();

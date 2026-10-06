@@ -2,41 +2,67 @@
 
 #include <LittleFS.h>
 #include <WiFi.h>
+#include <algorithm>
 #include <time.h>
 
 #include "Messaging/alert_message.h"
+#include "Protocol/PairingMessage.h"
 #include "Util/Clock.h"
+#include "Util/MacUtils.h"
 
 namespace {
 constexpr const char* QUEUE_DIR = "/queue";
 
-// Rede propria da master, sempre ligada: a pagina fica em http://192.168.4.1.
+// Master AP network credentials (http://192.168.4.1).
 constexpr const char* AP_SSID = "CintoAlerta-Master";
-constexpr const char* AP_PASSWORD = "cintoalerta";  // WPA2 exige 8 ou mais caracteres
+constexpr const char* AP_PASSWORD = "cintoalerta";  // Minimum 8 characters for WPA2
 
 constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 30000;
 constexpr uint32_t RETRY_INITIAL_MS = 5000;
 constexpr uint32_t RETRY_MAX_MS = 300000;
 
-// Fuso de Curitiba (UTC-3, sem horario de verao) e servidores NTP.
+// Timezone (UTC-3, no DST) and NTP servers.
 constexpr const char* TIMEZONE = "<-03>3";
 constexpr const char* NTP_SERVER_1 = "pool.ntp.org";
 constexpr const char* NTP_SERVER_2 = "time.google.com";
 
+// Timeout for dashboard-initiated (mode 2) PairResponse.
+constexpr uint32_t PAIRING_CONFIRM_TIMEOUT_MS = 10000;
+constexpr uint8_t ESP_NOW_ACK_STATUS_OK = 0x01;
+constexpr uint8_t ALERT_EVENT_QUEUE_DEPTH = 8;
+
 bool isSuccess(int httpStatus) { return httpStatus >= 200 && httpStatus < 300; }
 
-// O Telegram recusou o chat de forma definitiva (chat inexistente, bot bloqueado):
-// retentar nao adianta.
+// Permanent Telegram rejection (invalid chat or bot blocked).
 bool isPermanentRejection(int httpStatus) { return httpStatus == 400 || httpStatus == 403; }
+
+Protocol::PairingMessage makePairingMessage(Protocol::MessageType type) {
+    Protocol::PairingMessage msg{};
+    msg.type = type;
+    Protocol::fillKey(msg);
+    return msg;
+}
+
+// POD struct for FreeRTOS queue transfer.
+struct PendingAlertEvent {
+    char originMac[18];
+};
 }
 
 AppController::AppController(const String& configFilePath)
     : configStorage(configFilePath),
+      pairingService(PAIRING_CONFIRM_TIMEOUT_MS, []() { return millis(); }),
       webPortal(config, configStorage, [this] {
-          // A pagina gravou outro Wi-Fi: largar a rede atual e conectar na nova.
+          // Reconnect with new Wi-Fi credentials.
           WiFi.disconnect();
           connectWifi();
       }) {}
+
+AppController::~AppController() {
+    if (alertEventQueue != nullptr) {
+        vQueueDelete(alertEventQueue);
+    }
+}
 
 bool AppController::setup() {
     if (!LittleFS.begin(false)) {
@@ -48,27 +74,40 @@ bool AppController::setup() {
     callQueueStorage = std::make_unique<CallQueueStorage>(QUEUE_DIR);
     const size_t purged = callQueueStorage->purgeInvalidEntries();
     if (purged > 0) {
-        Serial.printf("AppController: %u arquivo(s) invalido(s) removido(s) da fila\n",
-                      static_cast<unsigned>(purged));
+        Serial.printf("AppController: purged %u invalid queue file(s)\n", static_cast<unsigned>(purged));
     }
     pendingNotifications = callQueueStorage->loadAllPending();
-    Serial.printf("AppController: %u notificacao(oes) pendente(s) na fila\n",
+    Serial.printf("AppController: %u pending notification(s) in the queue\n",
                   static_cast<unsigned>(pendingNotifications.size()));
 
-    // AP + STA: a master cria a propria rede (pagina de configuracao) e, ao mesmo
-    // tempo, conecta no roteador da casa para falar com o Telegram.
+    alertEventQueue = xQueueCreate(ALERT_EVENT_QUEUE_DEPTH, sizeof(PendingAlertEvent));
+
+    // AP + STA: host config portal while maintaining Wi-Fi uplink.
     WiFi.mode(WIFI_AP_STA);
     WiFi.setAutoReconnect(true);
     if (WiFi.softAP(AP_SSID, AP_PASSWORD)) {
-        Serial.printf("AppController: rede '%s' criada; pagina em http://%s\n",
+        Serial.printf("AppController: network '%s' up; page at http://%s\n",
                       AP_SSID, WiFi.softAPIP().toString().c_str());
     } else {
-        Serial.println("AppController: falha ao criar a rede propria da master");
+        Serial.println("AppController: failed to start the master's own network");
     }
+
+    if (!espNow.init()) {
+        Serial.println("AppController: ESP-NOW init failed");
+    } else {
+        registerAllPeers();
+        espNow.setOnMessageReceived([this](const String& mac, const uint8_t* data, int len) {
+            onEspNowMessage(mac, data, len);
+        });
+    }
+
+    webPortal.setListPendingPairings([this] { return getPendingPairings(); });
+    webPortal.setOnDiscardPending([this](const String& mac) { discardPendingPairing(mac); });
+    webPortal.setOnSaveDevice([this](const PeerNode& peer) { return pairAndSaveNewBelt(peer); });
     webPortal.begin();
 
     if (config.wifiSsid.isEmpty()) {
-        Serial.println("AppController: Wi-Fi nao configurado; alertas ficam na fila");
+        Serial.println("AppController: Wi-Fi not configured; alerts stay queued");
     } else {
         connectWifi();
     }
@@ -80,10 +119,16 @@ void AppController::execute() {
     maintainWifi();
     collectFinishedSends();
     dispatchPendingSends();
+    pairingService.tick();
+
+    PendingAlertEvent evt;
+    while (alertEventQueue != nullptr && xQueueReceive(alertEventQueue, &evt, 0) == pdTRUE) {
+        enqueueAlert(String(evt.originMac));
+    }
 }
 
 void AppController::connectWifi() {
-    Serial.printf("AppController: conectando ao Wi-Fi '%s'\n", config.wifiSsid.c_str());
+    Serial.printf("AppController: connecting to Wi-Fi '%s'\n", config.wifiSsid.c_str());
     WiFi.begin(config.wifiSsid.c_str(), config.wifiPassword.c_str());
     lastWifiAttemptMs = millis();
 }
@@ -95,7 +140,7 @@ void AppController::maintainWifi() {
 
     if (WiFi.status() == WL_CONNECTED) {
         if (!ntpStarted) {
-            Serial.printf("AppController: Wi-Fi conectado (%s)\n", WiFi.localIP().toString().c_str());
+            Serial.printf("AppController: Wi-Fi connected (%s)\n", WiFi.localIP().toString().c_str());
             configTzTime(TIMEZONE, NTP_SERVER_1, NTP_SERVER_2);
             ntpStarted = true;
         }
@@ -104,6 +149,12 @@ void AppController::maintainWifi() {
 
     if (millis() - lastWifiAttemptMs >= WIFI_RETRY_INTERVAL_MS) {
         connectWifi();
+    }
+}
+
+void AppController::registerAllPeers() {
+    for (const auto& peer : config.getPeers()) {
+        espNow.registerPeer(peer.getMacAddress());
     }
 }
 
@@ -117,12 +168,11 @@ std::vector<Notification>::iterator AppController::findPending(const String& eve
 bool AppController::enqueueAlert(const String& originMac) {
     const PeerNode* peer = config.findPeerByMac(originMac);
     if (peer == nullptr) {
-        Serial.printf("AppController: alerta ignorado, MAC desconhecido %s\n", originMac.c_str());
+        Serial.printf("AppController: alert ignored, unknown MAC %s\n", originMac.c_str());
         return false;
     }
     if (peer->getChatIds().empty()) {
-        Serial.printf("AppController: alerta ignorado, %s nao tem destinatarios\n",
-                      originMac.c_str());
+        Serial.printf("AppController: alert ignored, %s has no recipients\n", originMac.c_str());
         return false;
     }
 
@@ -130,8 +180,7 @@ bool AppController::enqueueAlert(const String& originMac) {
     const String displayName = peer->getAlias().isEmpty() ? peer->getMacAddress() : peer->getAlias();
     const String message = formatAlertMessage(peer->getMessage(), displayName, now, isClockValid());
 
-    // Sem relogio sincronizado o timestamp se repete; avancar ate o id ser unico
-    // para nao sobrescrever o arquivo de outro alerta pendente.
+    // Ensure unique event ID even without synced clock.
     uint32_t timestamp = static_cast<uint32_t>(now);
     String eventId = Notification::makeEventId(peer->getMacAddress(), timestamp);
     while (findPending(eventId) != pendingNotifications.end()) {
@@ -143,10 +192,9 @@ bool AppController::enqueueAlert(const String& originMac) {
 
     const bool saved = callQueueStorage->enqueue(notification);
     if (!saved) {
-        Serial.printf("AppController: falha ao gravar %s na fila; mantido apenas em RAM\n",
-                      eventId.c_str());
+        Serial.printf("AppController: failed to persist %s; keeping it in RAM only\n", eventId.c_str());
     }
-    // Tentar enviar mesmo sem gravar e melhor do que perder o alerta.
+    // Queue in memory even if flash persistence fails.
     pendingNotifications.push_back(std::move(notification));
     return saved;
 }
@@ -167,12 +215,12 @@ void AppController::markChatAsSent(const String& eventId, const String& chatId) 
     it->markChatAsSent(chatId);
     if (it->isCompleted()) {
         if (!callQueueStorage->remove(eventId)) {
-            Serial.printf("AppController: falha ao remover %s da fila\n", eventId.c_str());
+            Serial.printf("AppController: failed to remove %s from the queue\n", eventId.c_str());
         }
         pendingNotifications.erase(it);
     } else if (!callQueueStorage->updatePending(*it)) {
-        // Risco aceito: apos um reboot o chat pode receber o alerta de novo.
-        Serial.printf("AppController: falha ao atualizar %s na fila\n", eventId.c_str());
+        // Chat may receive duplicate alert on reboot if update fails.
+        Serial.printf("AppController: failed to update %s in the queue\n", eventId.c_str());
     }
 }
 
@@ -182,19 +230,19 @@ void AppController::collectFinishedSends() {
 
         const int status = task.getHttpStatus();
         if (isSuccess(status)) {
-            Serial.printf("AppController: %s enviado para o chat %s\n",
+            Serial.printf("AppController: %s sent to chat %s\n",
                           task.getEventId().c_str(), task.getChatId().c_str());
             markChatAsSent(task.getEventId(), task.getChatId());
             retryDelayMs = 0;
         } else if (isPermanentRejection(status)) {
-            Serial.printf("AppController: Telegram recusou o chat %s (HTTP %d); chat descartado\n",
+            Serial.printf("AppController: Telegram rejected chat %s (HTTP %d); dropping it\n",
                           task.getChatId().c_str(), status);
             markChatAsSent(task.getEventId(), task.getChatId());
         } else {
             retryDelayMs = (retryDelayMs == 0) ? RETRY_INITIAL_MS
                                                : min(retryDelayMs * 2, RETRY_MAX_MS);
             lastFailureMs = millis();
-            Serial.printf("AppController: falha ao enviar %s para %s (status %d); nova tentativa em %u s\n",
+            Serial.printf("AppController: failed to send %s to %s (status %d); retrying in %u s\n",
                           task.getEventId().c_str(), task.getChatId().c_str(), status,
                           static_cast<unsigned>(retryDelayMs / 1000));
         }
@@ -208,7 +256,7 @@ void AppController::dispatchPendingSends() {
         return;
     }
     if (millis() - lastFailureMs < retryDelayMs) {
-        return;  // em espera apos uma falha
+        return;  // Backoff delay active
     }
 
     for (const auto& notification : pendingNotifications) {
@@ -222,12 +270,117 @@ void AppController::dispatchPendingSends() {
                     break;
                 }
             }
-            if (freeTask == nullptr) return;  // todas ocupadas; tentar na proxima iteracao
+            if (freeTask == nullptr) return;  // All tasks busy
 
             if (!freeTask->startTask(config.telegramBotToken, notification.getEventId(), chatId,
                                  notification.getMessage())) {
-                return;  // falta de memoria ou dados invalidos; tentar na proxima iteracao
+                return;  // Task creation failed
             }
         }
     }
+}
+
+void AppController::onEspNowMessage(const String& senderMac, const uint8_t* payload, int len) {
+    // Route pairing messages separately from alert flow.
+    if (Protocol::isPairingMessage(payload, len)) {
+        handlePairingMessage(senderMac, payload, len);
+        return;
+    }
+
+    // ACK immediately to terminate belt retry loop.
+    espNow.sendAck(senderMac, ESP_NOW_ACK_STATUS_OK);
+
+    if (config.findPeerByMac(senderMac) == nullptr) {
+        Serial.printf("AppController: alert from unregistered MAC %s ignored\n", senderMac.c_str());
+        return;
+    }
+
+    // Defer processing to execute() loop.
+    PendingAlertEvent evt{};
+    senderMac.toCharArray(evt.originMac, sizeof(evt.originMac));
+    if (alertEventQueue != nullptr) {
+        xQueueSend(alertEventQueue, &evt, 0);
+    }
+}
+
+void AppController::handlePairingMessage(const String& senderMac, const uint8_t* payload, int len) {
+    (void)len; // Validated by isPairingMessage()
+    const auto* msg = reinterpret_cast<const Protocol::PairingMessage*>(payload);
+
+    if (msg->type == Protocol::MessageType::PairRequest) {
+        // Mode 1: reply to broadcast search and register pending pairing.
+        espNow.registerPeer(senderMac);
+        Protocol::PairingMessage response = makePairingMessage(Protocol::MessageType::PairResponse);
+        espNow.send(senderMac, reinterpret_cast<uint8_t*>(&response), sizeof(response));
+
+        if (config.findPeerByMac(senderMac) == nullptr) {
+            addPendingPairing(senderMac);
+        }
+        Serial.printf("AppController: belt %s is waiting to be set up\n", senderMac.c_str());
+        return;
+    }
+
+    if (msg->type == Protocol::MessageType::PairResponse) {
+        // Mode 2: confirm dashboard-initiated pairing.
+        if (!pairingService.isPendingFor(senderMac)) return; // Stale or mismatched response
+        espNow.registerPeer(senderMac);
+        config.addPeer(stagedPeer);
+        if (!configStorage.save(config)) {
+            Serial.println("AppController: failed to persist configuration");
+        }
+        pairingService.confirm();
+        Serial.printf("AppController: paired new belt %s (dashboard)\n", senderMac.c_str());
+    }
+}
+
+void AppController::addPendingPairing(const String& mac) {
+    for (auto& pending : pendingPairings) {
+        if (MacUtils::equal(pending.mac, mac)) {
+            pending.receivedAtEpoch = static_cast<uint32_t>(time(nullptr));
+            return;
+        }
+    }
+    pendingPairings.push_back(PendingPairing{mac, static_cast<uint32_t>(time(nullptr))});
+}
+
+void AppController::discardPendingPairing(const String& mac) {
+    pendingPairings.erase(
+        std::remove_if(pendingPairings.begin(), pendingPairings.end(),
+                       [&](const PendingPairing& pending) { return MacUtils::equal(pending.mac, mac); }),
+        pendingPairings.end());
+}
+
+bool AppController::pairAndSaveNewBelt(const PeerNode& peer) {
+    const String& mac = peer.getMacAddress();
+
+    if (config.findPeerByMac(mac) != nullptr) {
+        // Existing peer: update without pairing handshake.
+        config.removePeer(mac);
+        config.addPeer(peer);
+        return configStorage.save(config);
+    }
+
+    const bool alreadyPending = std::any_of(
+        pendingPairings.begin(), pendingPairings.end(),
+        [&](const PendingPairing& pending) { return MacUtils::equal(pending.mac, mac); });
+    if (alreadyPending) {
+        // Finalize mode 1 discovery from pending list.
+        discardPendingPairing(mac);
+        config.addPeer(peer);
+        return configStorage.save(config);
+    }
+
+    // Mode 2: unicast PairRequest and wait for belt confirmation.
+    stagedPeer = peer;
+    pairingService.start(mac);
+    Protocol::PairingMessage request = makePairingMessage(Protocol::MessageType::PairRequest);
+    espNow.send(mac, reinterpret_cast<uint8_t*>(&request), sizeof(request));
+
+    const uint32_t startMs = millis();
+    while (pairingService.isActive() && (millis() - startMs) < PAIRING_CONFIRM_TIMEOUT_MS) {
+        delay(50);
+        pairingService.tick();
+    }
+
+    return config.findPeerByMac(mac) != nullptr;
 }

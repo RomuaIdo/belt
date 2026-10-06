@@ -4,34 +4,40 @@
 #include <ArduinoJson.h>
 #include <WebServer.h>
 #include <functional>
+#include <vector>
 
+#include "Domain/PendingPairing.h"
 #include "Domain/SystemConfig.h"
 #include "Storage/ConfigStorage.h"
 
-// Pagina de configuracao da master: serve o frontend gravado no LittleFS e a API
-// JSON que ele usa (Wi-Fi, token do Telegram, cintos). Roda inteira na task do
-// loop(), entao compartilha `config` com o AppController sem concorrencia.
-// As rotas que falam com o Telegram bloqueiam o loop() por alguns segundos.
+// Web portal serving LittleFS configuration frontend and JSON API.
 class WebPortal {
 public:
-    // `onWifiChanged` e chamado depois de gravar um novo SSID/senha, para reconectar.
+    using PendingPairingsProvider = std::function<std::vector<PendingPairing>()>;
+    using DiscardPendingCallback = std::function<void(const String& mac)>;
+    // Callback to persist belt (triggers mode 2 handshake for new MACs).
+    using SaveDeviceCallback = std::function<bool(const PeerNode& peer)>;
+
+    // Invoked after saving new Wi-Fi credentials to reconnect.
     WebPortal(SystemConfig& config, ConfigStorage& configStorage,
               std::function<void()> onWifiChanged);
 
-    void begin();   // registra as rotas e liga o servidor na porta 80
-    void handle();  // atende as requisicoes pendentes; chamar a cada loop()
+    void begin();   // Registers routes and starts HTTP server on port 80
+    void handle();  // Processes incoming client requests in loop()
+
+    void setListPendingPairings(PendingPairingsProvider callback) { listPendingPairings = std::move(callback); }
+    void setOnDiscardPending(DiscardPendingCallback callback) { onDiscardPending = std::move(callback); }
+    void setOnSaveDevice(SaveDeviceCallback callback) { onSaveDevice = std::move(callback); }
 
 private:
     void serveFile(const char* path, const char* contentType);
 
-    // Resposta {ok:false, erro, mensagem}. Resultados esperados do Telegram (token
-    // invalido, sem internet...) usam code 200, para o frontend trata-los como resultado.
+    // Sends JSON response ({ok:false, erro, mensagem}).
     void sendJson(int code, const JsonDocument& doc);
     void sendError(int code, const char* error, const String& message);
     bool readBody(JsonDocument& doc);
 
-    // Verifica o que o Telegram exige (token, Wi-Fi, relogio). Se faltar algo,
-    // responde com o erro e retorna false.
+    // Validates Telegram prerequisites (token, Wi-Fi, clock).
     bool requireTelegram(const String& token);
 
     void handleStatus();
@@ -44,9 +50,14 @@ private:
     void handleDevicesList();
     void handleDeviceSave();
     void handleDeviceDelete();
+    void handlePendingList();
+    void handlePendingDelete();
 
     WebServer server{80};
     SystemConfig& config;
     ConfigStorage& configStorage;
     std::function<void()> onWifiChanged;
+    PendingPairingsProvider listPendingPairings;
+    DiscardPendingCallback onDiscardPending;
+    SaveDeviceCallback onSaveDevice;
 };

@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <uri/UriBraces.h>
 #include <algorithm>
+#include <time.h>
 #include <vector>
 
 #include "Messaging/TelegramTask.h"
@@ -12,7 +13,7 @@
 
 namespace {
 constexpr size_t MAX_SSID_LENGTH = 32;
-constexpr size_t MIN_PASSWORD_LENGTH = 8;   // WPA2; vazio = rede aberta
+constexpr size_t MIN_PASSWORD_LENGTH = 8;   // WPA2; empty = open network
 constexpr size_t MAX_PASSWORD_LENGTH = 63;
 constexpr size_t MAX_NETWORKS = 20;
 
@@ -22,7 +23,7 @@ constexpr size_t MAX_CHATS_PER_DEVICE = 10;
 
 const char* const TEST_MESSAGE = "Cinto Alerta: test message. If you can read this, alerts will reach you.";
 
-// Id de chat do Telegram: numero inteiro, negativo para grupos.
+// Telegram chat ID (negative for groups).
 bool isChatId(const String& text) {
     const size_t start = text.startsWith("-") ? 1 : 0;
     if (text.length() <= start || text.length() > start + 20) return false;
@@ -32,7 +33,7 @@ bool isChatId(const String& text) {
     return true;
 }
 
-// Token do BotFather: "123456789:AAH...". Aqui so se descartam formatos impossiveis.
+// BotFather token format validation.
 bool looksLikeBotToken(const String& token) {
     if (token.length() < 10 || token.length() > 100 || token.indexOf(':') < 1) return false;
     for (size_t i = 0; i < token.length(); ++i) {
@@ -43,6 +44,15 @@ bool looksLikeBotToken(const String& token) {
 
 bool isSuccess(int httpStatus) { return httpStatus >= 200 && httpStatus < 300; }
 bool isBadToken(int httpStatus) { return httpStatus == 401 || httpStatus == 404; }
+
+// ISO 8601 UTC timestamp for frontend clock comparison.
+String toIso8601Utc(time_t epoch) {
+    struct tm utc;
+    char buf[25];
+    gmtime_r(&epoch, &utc);
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return String(buf);
+}
 }
 
 WebPortal::WebPortal(SystemConfig& config, ConfigStorage& configStorage,
@@ -50,7 +60,7 @@ WebPortal::WebPortal(SystemConfig& config, ConfigStorage& configStorage,
     : config(config), configStorage(configStorage), onWifiChanged(std::move(onWifiChanged)) {}
 
 void WebPortal::begin() {
-    // Arquivos do frontend, um a um: servir a raiz do LittleFS exporia o config.json.
+    // Serve frontend files individually to avoid exposing config.json.
     server.on("/", HTTP_GET, [this] { serveFile("/index.html", "text/html"); });
     server.on("/index.html", HTTP_GET, [this] { serveFile("/index.html", "text/html"); });
     server.on("/style.css", HTTP_GET, [this] { serveFile("/style.css", "text/css"); });
@@ -68,13 +78,8 @@ void WebPortal::begin() {
     server.on(UriBraces("/api/dispositivos/{}"), HTTP_PUT, [this] { handleDeviceSave(); });
     server.on(UriBraces("/api/dispositivos/{}"), HTTP_DELETE, [this] { handleDeviceDelete(); });
 
-    // Pareamento ainda nao existe (depende do ESP-NOW): lista sempre vazia.
-    server.on("/api/pendentes", HTTP_GET, [this] {
-        server.send(200, "application/json", "{\"pendentes\":[]}");
-    });
-    server.on(UriBraces("/api/pendentes/{}"), HTTP_DELETE, [this] {
-        server.send(200, "application/json", "{\"ok\":true}");
-    });
+    server.on("/api/pendentes", HTTP_GET, [this] { handlePendingList(); });
+    server.on(UriBraces("/api/pendentes/{}"), HTTP_DELETE, [this] { handlePendingDelete(); });
 
     server.onNotFound([this] { sendError(404, "nao_encontrado", "Not found."); });
 
@@ -86,7 +91,7 @@ void WebPortal::handle() {
     server.handleClient();
 }
 
-// ---------- utilidades ----------
+// Helpers
 
 void WebPortal::serveFile(const char* path, const char* contentType) {
     File file = LittleFS.open(path, "r");
@@ -135,7 +140,7 @@ bool WebPortal::requireTelegram(const String& token) {
     return false;
 }
 
-// ---------- status e Wi-Fi ----------
+// Status and Wi-Fi
 
 void WebPortal::handleStatus() {
     const bool connected = WiFi.status() == WL_CONNECTED;
@@ -156,17 +161,17 @@ void WebPortal::handleWifiNetworks() {
         bool open;
     };
 
-    const int count = WiFi.scanNetworks();  // bloqueante, 2 a 3 s
+    const int count = WiFi.scanNetworks();  // Blocking (2-3s)
     if (count < 0) {
         sendError(500, "erro_scan", "Could not scan for networks. Try again.");
         return;
     }
 
-    // A mesma rede aparece uma vez por ponto de acesso: manter o sinal mais forte.
+    // Deduplicate BSSIDs by keeping strongest RSSI.
     std::vector<Network> networks;
     for (int i = 0; i < count; ++i) {
         const String ssid = WiFi.SSID(i);
-        if (ssid.isEmpty()) continue;  // rede oculta
+        if (ssid.isEmpty()) continue;  // Ignore hidden networks
 
         auto same = std::find_if(networks.begin(), networks.end(),
                                  [&](const Network& n) { return n.ssid == ssid; });
@@ -222,7 +227,7 @@ void WebPortal::handleWifiSave() {
     sendJson(200, doc);
 }
 
-// ---------- Telegram ----------
+// Telegram
 
 void WebPortal::handleTokenTest() {
     JsonDocument body;
@@ -286,7 +291,7 @@ void WebPortal::handleChats() {
         return;
     }
 
-    // Guardar so o chat de cada mensagem; o resto da resposta pode ser grande.
+    // Extract only chat objects from response.
     JsonDocument filter;
     filter["result"][0]["message"]["chat"] = true;
     JsonDocument reply;
@@ -307,7 +312,7 @@ void WebPortal::handleChats() {
         if (std::find(seen.begin(), seen.end(), id) != seen.end()) continue;
         seen.push_back(id);
 
-        String name = chat["title"] | "";  // grupos
+        String name = chat["title"] | "";  // Groups
         if (name.isEmpty()) {
             name = chat["first_name"] | "";
             const String last = chat["last_name"] | "";
@@ -354,7 +359,7 @@ void WebPortal::handleChatTest() {
     }
 }
 
-// ---------- cintos ----------
+// Devices
 
 void WebPortal::handleDevicesList() {
     JsonDocument doc;
@@ -379,7 +384,7 @@ void WebPortal::handleDeviceSave() {
         sendError(400, "mac_invalido", "The belt address is not valid.");
         return;
     }
-    mac = MacUtils::format(bytes);  // sempre em maiusculas
+    mac = MacUtils::format(bytes);  // Uppercase
 
     JsonDocument body;
     if (!readBody(body)) return;
@@ -411,16 +416,16 @@ void WebPortal::handleDeviceSave() {
         peer.addChatId(chatId);
     }
 
-    config.removePeer(mac);
-    config.addPeer(peer);
-    if (!configStorage.save(config)) {
-        sendError(500, "erro_gravacao", "Could not save the settings.");
+    // For new devices, waits for ESP-NOW pairing confirmation before saving.
+    if (!onSaveDevice || !onSaveDevice(peer)) {
+        sendError(200, "sem_confirmacao_do_cinto",
+                  "Could not confirm pairing with the belt. Press its pairing button, or try again.");
         return;
     }
 
     JsonDocument doc;
     doc["ok"] = true;
-    doc["confirmado_pelo_cinto"] = true;  // sem ESP-NOW ainda, nao ha o que confirmar
+    doc["confirmado_pelo_cinto"] = true;
     sendJson(200, doc);
 }
 
@@ -434,6 +439,30 @@ void WebPortal::handleDeviceDelete() {
         sendError(500, "erro_gravacao", "Could not save the settings.");
         return;
     }
+
+    JsonDocument doc;
+    doc["ok"] = true;
+    sendJson(200, doc);
+}
+
+// Pairing
+
+void WebPortal::handlePendingList() {
+    JsonDocument doc;
+    JsonArray arr = doc["pendentes"].to<JsonArray>();
+    if (listPendingPairings) {
+        for (const auto& pending : listPendingPairings()) {
+            JsonObject item = arr.add<JsonObject>();
+            item["mac"] = pending.mac;
+            item["recebido_em"] = toIso8601Utc(static_cast<time_t>(pending.receivedAtEpoch));
+        }
+    }
+    sendJson(200, doc);
+}
+
+void WebPortal::handlePendingDelete() {
+    const String mac = server.urlDecode(server.pathArg(0));
+    if (onDiscardPending) onDiscardPending(mac);
 
     JsonDocument doc;
     doc["ok"] = true;

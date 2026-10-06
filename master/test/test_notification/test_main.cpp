@@ -1,6 +1,5 @@
-// Unit tests for the pure in-memory Notification state object.
-// No flash/LittleFS access here — see test_call_queue_storage for persistence and the power-loss simulation.
-// Run with: pio test -e esp32-s3-devkitc-1-test -f test_notification
+// Unit tests for Notification state object.
+// Run: pio test -e esp32-s3-devkitc-1-test -f test_notification
 
 #include <Arduino.h>
 #include <unity.h>
@@ -44,7 +43,7 @@ void test_mark_chat_as_sent_removes_only_that_chat() {
 void test_mark_chat_as_sent_ignores_unknown_chat() {
     Notification n = makeNotification();
 
-    n.markChatAsSent("987654321"); // was never pending
+    n.markChatAsSent("987654321"); // Not pending
 
     TEST_ASSERT_EQUAL_UINT32(3, static_cast<uint32_t>(n.getPendingChatIds().size()));
 }
@@ -80,7 +79,7 @@ void test_make_event_id_differs_for_different_timestamps() {
 }
 
 void setup() {
-    delay(2000); // let the serial monitor attach before the first output
+    delay(2000); // Allow serial monitor to attach
 
     UNITY_BEGIN();
     RUN_TEST(test_constructor_stores_all_fields);
