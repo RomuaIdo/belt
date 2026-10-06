@@ -5,7 +5,7 @@
 ConfigStorage::ConfigStorage(String filePath) : filePath(std::move(filePath)) {}
 
 SystemConfig ConfigStorage::load() const {
-    SystemConfig config; //fallback
+    SystemConfig config; // Fallback defaults
 
     if (!LittleFS.exists(filePath)) {
         return config;

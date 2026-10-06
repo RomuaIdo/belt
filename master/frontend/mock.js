@@ -1,6 +1,4 @@
-/* mock.js — dados falsos para desenvolver e demonstrar a interface sem a master.
-   Só é carregado quando a página é aberta com ?mock na URL. Espelha a API do firmware
-   (src/Web/WebPortal.cpp). */
+// Mock API responses for testing UI without master firmware (loaded via ?mock).
 
 const LATENCY = 300;
 
@@ -16,7 +14,7 @@ let dispositivos = [
   },
 ];
 
-/* Quem já falou com o bot, como o getUpdates devolveria. */
+// Mock chat conversations from getUpdates.
 const conversas = [
   { chat_id: '987654321', nome: 'Maria Aparecida' },
   { chat_id: '123456789', nome: 'Arthur Heberle' },
@@ -33,7 +31,7 @@ function macFromPath(path, prefix) {
 
 const fail = (erro, mensagem) => ({ ok: false, erro, mensagem });
 
-/* Os resultados do Telegram só funcionam com Wi-Fi conectado e token salvo. */
+// Telegram calls require active Wi-Fi and configured token.
 function telegramPrecondition(token) {
   if (!token) return fail('sem_token', 'No token.');
   if (!wifi.conectado) return fail('sem_internet', 'Not connected.');
@@ -61,7 +59,7 @@ export function mockApi(method, path, body) {
     });
   }
 
-  // POST /api/wifi — a "senha errada" é simulada com a senha 12345678.
+  // POST /api/wifi — '12345678' simulates wrong password.
   if (method === 'POST' && path === '/api/wifi') {
     const wrong = body.senha === '12345678';
     wifi = wrong
@@ -70,7 +68,7 @@ export function mockApi(method, path, body) {
     return delay({ ok: true });
   }
 
-  // POST /api/telegram/testar-token — qualquer token com ":" funciona; "bad:..." é recusado.
+  // POST /api/telegram/testar-token — tokens with ':' succeed; 'bad:...' fails.
   if (method === 'POST' && path === '/api/telegram/testar-token') {
     const token = (body && body.token) || '';
     const pre = telegramPrecondition(token);
@@ -93,7 +91,7 @@ export function mockApi(method, path, body) {
     return delay(pre || { ok: true, conversas: conversas.map((c) => ({ ...c })) });
   }
 
-  // POST /api/teste-telegram — o grupo recusa, para exercitar o aviso de erro.
+  // POST /api/teste-telegram — group chat simulates delivery rejection.
   if (method === 'POST' && path === '/api/teste-telegram') {
     const pre = telegramPrecondition(telegramToken);
     if (pre) return delay(pre);
@@ -127,7 +125,7 @@ export function mockApi(method, path, body) {
     return delay({ ok: true });
   }
 
-  // GET /api/pendentes — o pareamento ainda não existe no firmware
+  // GET /api/pendentes
   if (method === 'GET' && path === '/api/pendentes') {
     return delay({ pendentes: [] });
   }

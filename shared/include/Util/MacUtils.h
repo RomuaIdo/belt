@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-// Small, dependency-free helpers for parsing and formatting MAC addresses.
+// Helpers for parsing and formatting MAC addresses.
 
 namespace MacUtils {
 

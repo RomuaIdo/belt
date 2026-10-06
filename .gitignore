@@ -1,7 +1,3 @@
-# Project documentation generated or kept outside source control
-docs/
-docs_claude/
-
 # PlatformIO / embedded build outputs
 .pio/
 .pioenvs/
@@ -53,3 +49,4 @@ Thumbs.db
 # Local assistant/tooling state
 .claude/
 .mcp.json
+docs_claude/

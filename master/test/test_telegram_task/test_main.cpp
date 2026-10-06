@@ -1,5 +1,4 @@
-// Executar: pio test -e esp32-s3-devkitc-1-test -f test_telegram_task
-// Estes testes nao exigem Wi-Fi, credenciais ou envio de mensagens reais.
+// Run: pio test -e esp32-s3-devkitc-1-test -f test_telegram_task
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -40,7 +39,7 @@ void test_start_rejects_empty_inputs_before_creating_task() {
     TEST_ASSERT_FALSE(task.startTask("test-token", "evt1", "", "Alerta"));
     TEST_ASSERT_FALSE(task.startTask("test-token", "evt1", "123456789", ""));
 
-    // Nenhuma task foi criada: o objeto continua livre.
+    // Object remains free.
     TEST_ASSERT_TRUE(task.isFree());
     TEST_ASSERT_FALSE(task.isDone());
 }

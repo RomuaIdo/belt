@@ -131,20 +131,34 @@ Se a internet cair no momento do alerta, a base **guarda a ocorrência** e envia
 
 | Caminho | Conteúdo |
 |---|---|
-| [master/](master/) | Projeto PlatformIO do master ESP32-S3 |
-| [master/include/](master/include/) e [master/src/](master/src/) | Cabeçalhos e implementações C++, agrupados por responsabilidade |
-| [master/frontend/](master/frontend/) | Interface HTML/CSS/JS independente, ainda com dados simulados |
-| [master/test/](master/test/) | Testes Unity dos componentes existentes |
-| [master/prototypes/](master/prototypes/) | Experimentos fora da compilação do firmware |
-| `docs/` | Documentos do projeto |
+| `master/` | Master firmware — PlatformIO project (`include/`, `src/`, `test/`) targeting an ESP32-S3-DevKitC-1 (N16R8: 16 MB flash, 8 MB PSRAM) |
+| `master/prompt.md` | Master's class diagram and per-class design notes (architecture source of truth) |
+| `master/frontend/` | Config page (HTML/CSS/JS) served from the master's own LittleFS |
+| `master/prototypes/` | Work in progress from other team members, not yet wired into the firmware above (see below) |
+| `slave/` | Belt (slave) firmware — PlatformIO project targeting an ESP32-S3 Super Mini (ESP32-S3FH4R2: 4 MB flash, 2 MB PSRAM) |
+| `slave/prompt.md` | Slave's class diagram, per-class design notes, and the task-by-task roadmap for the rest of the belt firmware |
+| `shared/` | Wire-protocol and MAC-utility headers included by both `master/` and `slave/` (`-I../shared/include`), so they can never drift out of sync between the two firmwares |
+| `docs/Plano_de_Projeto.pdf` | Project plan submitted for the course |
 
 Consulte o [guia do master](master/README.md) para compilar componentes, executar
 testes e abrir a interface localmente. A hospedagem do frontend no ESP32 e sua
 conexão com as APIs ainda serão implementadas.
 
----
+PlatformIO project (Arduino framework) implementing the master station: an always-on Wi-Fi
+AP+STA with a config page served from LittleFS (`master/frontend/`), ESP-NOW pairing and
+alert reception, asynchronous Telegram sends on FreeRTOS tasks with retry/backoff, and a
+power-loss-safe retry queue on LittleFS. The domain model, storage, network and messaging
+layers are covered by the Unity test suites under `master/test/`; see `master/README.md`
+for build/flash/test instructions.
 
-## O que este projeto não é
+## Slave firmware (`slave/`)
+
+PlatformIO project (Arduino framework) for the belt. Implemented so far: a pairing button that
+listens for the master's broadcast to learn its MAC and replies so the master learns the belt's
+MAC back (bidirectional ESP-NOW addressing, no manual MAC entry on either side), with the
+learned master MAC persisted on LittleFS across reboots. Motion sensing/fall detection,
+vibration+LED warning with a cancel window, alert transmission, and battery monitoring are not
+implemented yet — see `slave/prompt.md`'s roadmap section for the planned, team-dividable tasks.
 
 > [!WARNING]
 > **Não é um dispositivo médico.** É um protótipo acadêmico, sem validação clínica nem certificação regulatória.
@@ -153,7 +167,16 @@ conexão com as APIs ainda serão implementadas.
 - Depende de energia elétrica na casa, internet funcionando e um cuidador com celular acessível.
 - **Não substitui presença humana.** Reduz o tempo até o socorro; não elimina o risco de cair.
 
----
+- `frontend/` — master configuration UI mockup (plain HTML/CSS/JS, meant to eventually be
+  served from LittleFS). `app.js` starts with `const MOCK = true`: every call is served by
+  `mock.js` (fake data, simulated latency). Run it locally with:
+  ```bash
+  cd master/prototypes/frontend
+  python -m http.server 8000    # or: python3 -m http.server 8000
+  # open http://localhost:8000
+  ```
+- `telegram_call.cpp` — standalone prototype for the Telegram Bot API HTTP call, independent
+  from `master/src/Messaging/TelegramTask.cpp`.
 
 <div align="center">
 

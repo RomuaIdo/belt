@@ -2,7 +2,7 @@
 #include "App/AppController.h"
 
 namespace {
-    AppController appController("/config.json");  // o construtor so guarda o caminho
+    AppController appController("/config.json");
     bool ready = false;
 }
 
@@ -10,7 +10,7 @@ void setup() {
     Serial.begin(115200);
     ready = appController.setup();
     if (!ready) {
-        Serial.println("AppController: falha ao montar o LittleFS");
+        Serial.println("AppController: failed to mount LittleFS");
     }
 }
 
