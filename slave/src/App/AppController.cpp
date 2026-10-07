@@ -2,6 +2,7 @@
 #include "Util/AppConfig.h"
 #include "Protocol/PairingMessage.h"
 #include <LittleFS.h>
+#include <WiFi.h>
 
 namespace {
 
@@ -28,14 +29,11 @@ void AppController::setup() {
         Serial.println("AppController: failed to mount LittleFS");
     }
 
-    masterLink = masterLinkStorage.load();
-    if (masterLink.hasMac()) {
-        // Register peer for future ESP-NOW transmission.
-        espNow.registerPeer(masterLink.getMacAddress());
-        Serial.printf("AppController: restored paired master %s\n", masterLink.getMacAddress().c_str());
-    }
-
     pinMode(AppConfig::kPairingButtonPin, INPUT_PULLUP);
+
+    // esp_now_init() needs the Wi-Fi driver already up; STA mode alone (no
+    // connect attempt) is enough and keeps the radio free for ESP-NOW.
+    WiFi.mode(WIFI_STA);
 
     if (!espNow.init()) {
         Serial.println("AppController: ESP-NOW init failed");
@@ -43,6 +41,14 @@ void AppController::setup() {
         espNow.setOnMessageReceived([this](const String& mac, const uint8_t* data, int len) {
             onEspNowMessage(mac, data, len);
         });
+    }
+
+    // registerPeer() needs ESP-NOW already initialized, so this must come
+    // after espNow.init() above.
+    masterLink = masterLinkStorage.load();
+    if (masterLink.hasMac()) {
+        espNow.registerPeer(masterLink.getMacAddress());
+        Serial.printf("AppController: restored paired master %s\n", masterLink.getMacAddress().c_str());
     }
 
     Serial.println("AppController: setup complete");
