@@ -10,13 +10,23 @@
 #include "Domain/SystemConfig.h"
 #include "Storage/ConfigStorage.h"
 
+// Outcome of saving a belt from the config page.
+enum class SaveDeviceResult {
+    Updated,         // registered belt, settings saved
+    Paired,          // new belt: it confirmed the pairing and was saved
+    NotWaiting,      // new belt that is not asking to pair (not listed, or gone silent)
+    NoConfirmation,  // the belt did not answer the PairAccept in time; nothing saved
+    StorageError,    // could not write config.json
+};
+
 // Web portal serving LittleFS configuration frontend and JSON API.
 class WebPortal {
 public:
     using PendingPairingsProvider = std::function<std::vector<PendingPairing>()>;
     using DiscardPendingCallback = std::function<void(const String& mac)>;
-    // Callback to persist belt (triggers mode 2 handshake for new MACs).
-    using SaveDeviceCallback = std::function<bool(const PeerNode& peer)>;
+    // Saves a belt. For a new one it runs the pairing handshake first (blocks up to
+    // ~1.5 s waiting for the belt) and saves only if the belt confirms.
+    using SaveDeviceCallback = std::function<SaveDeviceResult(const PeerNode& peer)>;
 
     // Invoked after saving new Wi-Fi credentials to reconnect.
     WebPortal(SystemConfig& config, ConfigStorage& configStorage,

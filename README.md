@@ -167,17 +167,7 @@ for build/flash/test instructions.
 - Relies on electrical power in the home, a working internet connection, and a caregiver with an accessible smartphone.
 - **Does not replace human presence.** It reduces the time until help arrives; it does not eliminate the risk of falling.
 
-- `frontend/` — master configuration UI mockup (plain HTML/CSS/JS, meant to eventually be
-  served from LittleFS). `app.js` starts with `const MOCK = true`: every call is served by
-  `mock.js` (fake data, simulated latency). Run it locally with:
-  ```bash
-  cd master/prototypes/frontend
-  python -m http.server 8000    # or: python3 -m http.server 8000
-  # open http://localhost:8000
-  ```
-- `telegram_call.cpp` — standalone prototype for the Telegram Bot API HTTP call, independent
-  from `master/src/Messaging/TelegramTask.cpp`.
-
+---
 <div align="center">
 
 ## Team

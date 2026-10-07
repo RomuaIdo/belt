@@ -22,12 +22,15 @@ MasterLink MasterLinkStorage::load() const {
         return MasterLink();
     }
 
-    return MasterLink(doc["masterMac"] | "");
+    // An out-of-range channel is treated as unknown rather than trusted.
+    const int channel = doc["channel"] | 0;
+    return MasterLink(doc["masterMac"] | "", (channel >= 1 && channel <= 14) ? channel : 0);
 }
 
 bool MasterLinkStorage::save(const MasterLink& link) const {
     JsonDocument doc;
     doc["masterMac"] = link.getMacAddress();
+    doc["channel"] = link.getChannel();
 
     File file = LittleFS.open(filePath, "w");
     if (!file) {
