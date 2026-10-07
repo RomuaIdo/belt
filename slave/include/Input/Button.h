@@ -10,6 +10,9 @@ public:
     // Returns true once per debounced press edge.
     bool update(bool rawLevel, uint32_t nowMs);
 
+    // True while the debounced state is "pressed".
+    bool isPressed() const { return activeLow ? !stableState : stableState; }
+
 private:
     uint32_t debounceMs;
     bool activeLow;

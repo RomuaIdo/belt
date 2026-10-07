@@ -232,8 +232,6 @@ textarea { resize: vertical; min-height: 96px; }
 .field.invalid textarea,
 input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
 
-#add-mac { font-family: var(--mono); letter-spacing: 0.04em; }
-
 .hint { margin: 6px 0 0; color: var(--ink-soft); font-size: 0.875rem; max-width: 60ch; }
 .err {
   margin: 6px 0 0;
@@ -410,8 +408,6 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
 .app-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .iconbtn-end { margin-left: 0; margin-right: -10px; }
 
-.home-actions { display: flex; justify-content: flex-end; }
-
 .panel-body { padding: 4px 16px 18px; }
 .panel-body .field { margin-top: 16px; }
 .panel-body .hint:first-child { margin-top: 12px; }
@@ -469,8 +465,6 @@ input[type="text"][aria-invalid="true"] { border-color: var(--rust); }
 .chat-result.ok { color: var(--pine); }
 .chat-result.bad { color: var(--rust); }
 .chat-result:empty { display: none; }
-
-.dialog-gap { margin-top: 18px; }
 
 /* Responsive */
 

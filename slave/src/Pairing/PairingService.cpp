@@ -1,24 +1,31 @@
 #include "Pairing/PairingService.h"
 
-PairingService::PairingService(uint32_t searchTimeoutMs, NowMsFn nowMs)
-    : searchTimeoutMs(searchTimeoutMs), nowMs(std::move(nowMs)) {}
+PairingService::PairingService(uint32_t timeoutMs, NowMsFn nowMs)
+    : timeoutMs(timeoutMs), nowMs(std::move(nowMs)) {}
 
 void PairingService::startSearching() {
     state = State::Searching;
-    searchStartMs = nowMs();
+    startMs = nowMs();
 }
 
 void PairingService::tick() {
-    if (state != State::Searching) return;
+    if (!isActive()) return;
 
-    if (static_cast<uint32_t>(nowMs() - searchStartMs) >= searchTimeoutMs) {
+    if (static_cast<uint32_t>(nowMs() - startMs) >= timeoutMs) {
         state = State::TimedOut;
     }
 }
 
-void PairingService::onPairResponseReceived() {
-    if (state != State::Searching) return; // Ignore stray response
-    state = State::Paired;
+void PairingService::onPairWait() {
+    if (isActive()) state = State::Waiting;
+}
+
+void PairingService::resumeSearching() {
+    if (state == State::Waiting) state = State::Searching;
+}
+
+void PairingService::onPairAccepted() {
+    if (isActive()) state = State::Paired;
 }
 
 void PairingService::reset() {
@@ -28,7 +35,7 @@ void PairingService::reset() {
 }
 
 uint32_t PairingService::remainingMs() const {
-    if (state != State::Searching) return 0;
-    uint32_t elapsed = static_cast<uint32_t>(nowMs() - searchStartMs);
-    return elapsed >= searchTimeoutMs ? 0 : searchTimeoutMs - elapsed;
+    if (!isActive()) return 0;
+    const uint32_t elapsed = static_cast<uint32_t>(nowMs() - startMs);
+    return elapsed >= timeoutMs ? 0 : timeoutMs - elapsed;
 }

@@ -131,34 +131,43 @@ Se a internet cair no momento do alerta, a base **guarda a ocorrência** e envia
 
 | Caminho | Conteúdo |
 |---|---|
-| `master/` | Master firmware — PlatformIO project (`include/`, `src/`, `test/`) targeting an ESP32-S3-DevKitC-1 (N16R8: 16 MB flash, 8 MB PSRAM) |
-| `master/prompt.md` | Master's class diagram and per-class design notes (architecture source of truth) |
-| `master/frontend/` | Config page (HTML/CSS/JS) served from the master's own LittleFS |
-| `master/prototypes/` | Work in progress from other team members, not yet wired into the firmware above (see below) |
-| `slave/` | Belt (slave) firmware — PlatformIO project targeting an ESP32-S3 Super Mini (ESP32-S3FH4R2: 4 MB flash, 2 MB PSRAM) |
-| `slave/prompt.md` | Slave's class diagram, per-class design notes, and the task-by-task roadmap for the rest of the belt firmware |
-| `shared/` | Wire-protocol and MAC-utility headers included by both `master/` and `slave/` (`-I../shared/include`), so they can never drift out of sync between the two firmwares |
-| `docs/Plano_de_Projeto.pdf` | Project plan submitted for the course |
+| [master/](master/) | Firmware da base (ESP32-S3-DevKitC-1, N16R8): projeto PlatformIO com `include/`, `src/` e `test/` |
+| [master/frontend/](master/frontend/) | Página de configuração (HTML/CSS/JS), servida do LittleFS da própria base |
+| [master/prototypes/](master/prototypes/) | Experimentos fora da compilação do firmware (`telegram_call.cpp`) |
+| [slave/](slave/) | Firmware do cinto (ESP32-S3 Super Mini): projeto PlatformIO |
+| [shared/](shared/) | Cabeçalhos incluídos pelos dois firmwares (`-I../shared/include`): o protocolo de mensagens (`Protocol/Message.h`) e utilitários de MAC. Ficam num só lugar para base e cinto nunca divergirem |
+| `docs/Plano_de_Projeto.pdf` | Plano do projeto entregue na disciplina |
 
-Consulte o [guia do master](master/README.md) para compilar componentes, executar
-testes e abrir a interface localmente. A hospedagem do frontend no ESP32 e sua
-conexão com as APIs ainda serão implementadas.
+Consulte o [guia da base](master/README.md) para compilar, testar, gravar o firmware e
+abrir a interface localmente.
 
-PlatformIO project (Arduino framework) implementing the master station: an always-on Wi-Fi
-AP+STA with a config page served from LittleFS (`master/frontend/`), ESP-NOW pairing and
-alert reception, asynchronous Telegram sends on FreeRTOS tasks with retry/backoff, and a
-power-loss-safe retry queue on LittleFS. The domain model, storage, network and messaging
-layers are covered by the Unity test suites under `master/test/`; see `master/README.md`
-for build/flash/test instructions.
+### Como o cinto é pareado com a base
 
-## Slave firmware (`slave/`)
+O cinto sempre inicia. A base fica no canal Wi-Fi do roteador, que o cinto não conhece,
+então o cinto varre os canais 1 a 13 enviando um pedido em broadcast.
 
-PlatformIO project (Arduino framework) for the belt. Implemented so far: a pairing button that
-listens for the master's broadcast to learn its MAC and replies so the master learns the belt's
-MAC back (bidirectional ESP-NOW addressing, no manual MAC entry on either side), with the
-learned master MAC persisted on LittleFS across reboots. Motion sensing/fall detection,
-vibration+LED warning with a cancel window, alert transmission, and battery monitoring are not
-implemented yet — see `slave/prompt.md`'s roadmap section for the planned, team-dividable tasks.
+1. Ao apertar o botão de pareamento, o cinto envia `PairRequest` em cada canal.
+2. A base ouve, mostra o cinto em "Waiting to be set up" na página e responde `PairWait`.
+   O cinto trava nesse canal e repete o pedido a cada 2 s enquanto o cuidador configura.
+3. O cuidador escolhe o cinto, preenche nome, mensagem e destinatários e aperta **Save**.
+4. A base envia `PairAccept` (com o seu canal). O cinto grava o MAC e o canal da base
+   e responde `PairConfirm`.
+5. Só então a base grava o MAC do cinto. Sem a confirmação, nada é gravado e a página avisa.
+
+Todas as mensagens começam com um cabeçalho (`magic`, tipo e `seq`); a base e o cinto
+descartam qualquer quadro que não bata com ele. O formato está em
+[shared/include/Protocol/Message.h](shared/include/Protocol/Message.h).
+
+### Estado do firmware do cinto
+
+Implementado: botão de pareamento, varredura de canais e pareamento com aprovação do
+cuidador, com o MAC e o canal da base gravados no LittleFS (sobrevivem a reinício). Ainda
+não implementado: detecção de queda, vibração e LED com janela de cancelamento, envio do
+alerta (a base já recebe `Alert` e responde `AlertAck`) e monitoramento de bateria.
+
+---
+
+## O que este projeto não é
 
 > [!WARNING]
 > **Não é um dispositivo médico.** É um protótipo acadêmico, sem validação clínica nem certificação regulatória.
@@ -167,17 +176,7 @@ implemented yet — see `slave/prompt.md`'s roadmap section for the planned, tea
 - Depende de energia elétrica na casa, internet funcionando e um cuidador com celular acessível.
 - **Não substitui presença humana.** Reduz o tempo até o socorro; não elimina o risco de cair.
 
-- `frontend/` — master configuration UI mockup (plain HTML/CSS/JS, meant to eventually be
-  served from LittleFS). `app.js` starts with `const MOCK = true`: every call is served by
-  `mock.js` (fake data, simulated latency). Run it locally with:
-  ```bash
-  cd master/prototypes/frontend
-  python -m http.server 8000    # or: python3 -m http.server 8000
-  # open http://localhost:8000
-  ```
-- `telegram_call.cpp` — standalone prototype for the Telegram Bot API HTTP call, independent
-  from `master/src/Messaging/TelegramTask.cpp`.
-
+---
 <div align="center">
 
 ## A equipe

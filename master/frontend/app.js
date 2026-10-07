@@ -162,7 +162,7 @@ async function loadHome({ initial = false } = {}) {
     clearHomeStatus();
 
     if (!knownDevices.length && !pendentes.length) {
-      setHomeStatus('No belts yet. Use "Add belt manually", or press the pairing button on a belt.');
+      setHomeStatus('No belts yet. Press the pairing button on a belt and it will show up here.');
       knownPendingMacs = new Set();
       return;
     }
@@ -248,88 +248,6 @@ async function removeDevice(d) {
   }
 }
 
-// Manual MAC entry
-
-function normalizeMac(text) {
-  const hex = text.replace(/[^0-9a-f]/gi, '');
-  if (hex.length !== 12) return null;
-  return hex.toUpperCase().match(/../g).join(':');
-}
-
-// Formats input into AA:BB:CC:DD:EE:FF, stripping non-hex characters.
-const MAC_DIGITS = 12;
-const MAC_HEX_RE = /[0-9a-f]/i;
-const MAC_SEPARATOR_RE = /[:\-\s]/;
-
-function formatMac(raw, caret, prevDigitCount, backspace, deleting) {
-  let digits = '';
-  let before = 0;                 // Digits before cursor
-  let invalidChar = false;
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i];
-    if (MAC_HEX_RE.test(ch)) {
-      digits += ch.toUpperCase();
-      if (i < caret) before++;
-    } else if (!MAC_SEPARATOR_RE.test(ch)) {
-      invalidChar = true;
-    }
-  }
-
-  const tooLong = digits.length > MAC_DIGITS;
-  if (tooLong) {
-    digits = digits.slice(0, MAC_DIGITS);
-    before = Math.min(before, MAC_DIGITS);
-  }
-
-  // If backspace only removed ':', also delete preceding digit.
-  if (backspace && before > 0 && digits.length === prevDigitCount) {
-    digits = digits.slice(0, before - 1) + digits.slice(before);
-    before--;
-  }
-
-  let value = (digits.match(/.{1,2}/g) || []).join(':');
-  // Append ':' after pairs only when typing forward.
-  if (!deleting && digits.length > 0 && digits.length < MAC_DIGITS && digits.length % 2 === 0) {
-    value += ':';
-  }
-
-  // Position cursor after the N-th digit or trailing ':'.
-  let pos = before === 0 ? 0 : before + Math.floor((before - 1) / 2);
-  if (!deleting && before === digits.length && value.endsWith(':')) pos = value.length;
-
-  return { value, caret: pos, invalidChar, tooLong };
-}
-
-let addMacDigitCount = 0;
-
-function showAddMacError(text) {
-  $('add-mac-err').textContent = text;
-  $('add-mac-err').hidden = false;
-  $('add-mac').setAttribute('aria-invalid', 'true');
-}
-
-function clearAddMacError() {
-  $('add-mac-err').hidden = true;
-  $('add-mac').setAttribute('aria-invalid', 'false');
-}
-
-function addBeltManually() {
-  const dlg = $('add-dialog');
-  $('add-mac').value = '';
-  addMacDigitCount = 0;
-  clearAddMacError();
-  dlg.returnValue = 'cancel';
-  dlg.showModal();
-  $('add-mac').focus();
-  dlg.addEventListener('close', () => {
-    if (dlg.returnValue !== 'ok') return;
-    const mac = normalizeMac($('add-mac').value);
-    const existing = knownDevices.find((d) => d.mac.toUpperCase() === mac);
-    if (existing) startEdit(existing);
-    else startSetup({ mac });
-  }, { once: true });
-}
-
 // Pending devices polling
 
 async function refreshPending() {
@@ -375,7 +293,7 @@ function applyStatus(status) {
   $('wifi-current').textContent = !wifi.ssid
     ? 'No network saved yet.'
     : wifi.conectado
-      ? `Connected to "${wifi.ssid}" (address ${wifi.ip}). The master reconnects by itself when it powers on.`
+      ? `Connected to "${wifi.ssid}". On that network, open http://${wifi.endereco} (or http://${wifi.ip}). The master reconnects by itself when it powers on.`
       : `Saved network: "${wifi.ssid}". The master is not connected to it right now.`;
   if (wifi.ssid && !$('wifi-ssid').value) $('wifi-ssid').value = wifi.ssid;
 
@@ -449,7 +367,9 @@ async function connectWifi() {
         const status = await api('GET', '/api/status');
         applyStatus(status);
         if (status.wifi.conectado) {
-          setResult(result, `Connected. The master's address on your network is ${status.wifi.ip}.`, 'ok');
+          setResult(result,
+            `Connected. On "${status.wifi.ssid}", open http://${status.wifi.endereco} (or http://${status.wifi.ip}).`,
+            'ok');
           return;
         }
       } catch (e) { // Retry
@@ -764,7 +684,9 @@ async function onSubmit(ev) {
     state.hidden = true;
     saveBtn.disabled = false;
     const w = $('form-warning');
-    w.textContent = `Couldn't save: ${e.message}. Try again.`;
+    // These replies already say what to do; other errors get the generic prefix.
+    const selfExplaining = e.code === 'cinto_sem_resposta' || e.code === 'cinto_nao_pendente';
+    w.textContent = selfExplaining ? e.message : `Couldn't save: ${e.message}. Try again.`;
     w.hidden = false;
   }
 }
@@ -796,29 +718,6 @@ $('wifi-connect').addEventListener('click', connectWifi);
 $('tg-token').addEventListener('input', onTokenInput);
 $('tg-test').addEventListener('click', testToken);
 $('tg-save').addEventListener('click', saveToken);
-
-$('add-belt-btn').addEventListener('click', addBeltManually);
-$('add-ok').addEventListener('click', (ev) => {
-  if (normalizeMac($('add-mac').value)) return;
-  ev.preventDefault();  // Keep dialog open
-  showAddMacError(`Enter all 12 digits (you have ${addMacDigitCount}), like AA:BB:CC:DD:EE:FF.`);
-});
-$('add-mac').addEventListener('input', (ev) => {
-  const el = ev.target;
-  const type = ev.inputType || '';
-  const r = formatMac(el.value, el.selectionStart ?? el.value.length, addMacDigitCount,
-                      type === 'deleteContentBackward', type.startsWith('delete'));
-  el.value = r.value;
-  el.setSelectionRange(r.caret, r.caret);
-  addMacDigitCount = r.value.replace(/:/g, '').length;
-
-  if (r.invalidChar) showAddMacError('Only the digits 0–9 and the letters A–F can be part of an address.');
-  else if (r.tooLong) showAddMacError('An address has 12 digits (6 pairs). The extra digits were ignored.');
-  else clearAddMacError();
-});
-$('add-mac').addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter') { ev.preventDefault(); $('add-ok').click(); }
-});
 
 form.addEventListener('input', () => { formDirty = true; });
 
