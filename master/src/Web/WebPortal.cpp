@@ -149,6 +149,7 @@ void WebPortal::handleStatus() {
     doc["wifi"]["ssid"] = config.wifiSsid;
     doc["wifi"]["conectado"] = connected;
     doc["wifi"]["ip"] = connected ? WiFi.localIP().toString() : String();
+    doc["wifi"]["endereco"] = String(WiFi.getHostname()) + ".local";
     doc["telegram"]["configurado"] = !config.telegramBotToken.isEmpty();
     doc["relogio_ok"] = isClockValid();
     sendJson(200, doc);
@@ -416,16 +417,29 @@ void WebPortal::handleDeviceSave() {
         peer.addChatId(chatId);
     }
 
-    // For new devices, waits for ESP-NOW pairing confirmation before saving.
-    if (!onSaveDevice || !onSaveDevice(peer)) {
-        sendError(200, "sem_confirmacao_do_cinto",
-                  "Could not confirm pairing with the belt. Press its pairing button, or try again.");
-        return;
+    // A new belt is saved only after it confirms the pairing over ESP-NOW. Failures
+    // use non-2xx codes so the frontend treats them as errors, not as success.
+    const SaveDeviceResult result = onSaveDevice ? onSaveDevice(peer) : SaveDeviceResult::StorageError;
+    switch (result) {
+        case SaveDeviceResult::NotWaiting:
+            sendError(404, "cinto_nao_pendente",
+                      "This belt is not waiting to be set up. Press its pairing button.");
+            return;
+        case SaveDeviceResult::NoConfirmation:
+            sendError(504, "cinto_sem_resposta",
+                      "The belt did not answer. Press its pairing button and try again.");
+            return;
+        case SaveDeviceResult::StorageError:
+            sendError(500, "erro_gravacao", "Could not save the settings.");
+            return;
+        case SaveDeviceResult::Updated:
+        case SaveDeviceResult::Paired:
+            break;
     }
 
     JsonDocument doc;
     doc["ok"] = true;
-    doc["confirmado_pelo_cinto"] = true;
+    doc["confirmado_pelo_cinto"] = (result == SaveDeviceResult::Paired);
     sendJson(200, doc);
 }
 
@@ -454,7 +468,10 @@ void WebPortal::handlePendingList() {
         for (const auto& pending : listPendingPairings()) {
             JsonObject item = arr.add<JsonObject>();
             item["mac"] = pending.mac;
-            item["recebido_em"] = toIso8601Utc(static_cast<time_t>(pending.receivedAtEpoch));
+            // Empty when the clock was not synced yet: the page shows "a moment ago".
+            item["recebido_em"] = pending.receivedAtEpoch == 0
+                                      ? String()
+                                      : toIso8601Utc(static_cast<time_t>(pending.receivedAtEpoch));
         }
     }
     sendJson(200, doc);

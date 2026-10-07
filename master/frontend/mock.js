@@ -2,7 +2,7 @@
 
 const LATENCY = 300;
 
-let wifi = { ssid: '', conectado: false, ip: '' };
+let wifi = { ssid: '', conectado: false, ip: '', endereco: 'cintoalerta.local' };
 let telegramToken = '';
 
 let dispositivos = [
@@ -12,6 +12,15 @@ let dispositivos = [
     mensagem: 'ALERT: {nome} may have fallen. Detected at {hora} on {data}.',
     chat_ids: ['987654321'],
   },
+];
+
+// Belts asking to pair. The first keeps repeating its request (every GET shows it as
+// "just now") and confirms on Save; the second stopped answering, so Save on it fails
+// with "the belt did not answer".
+const SILENT_MAC = 'F4:12:FA:9C:33:00';
+let pendentes = [
+  { mac: 'F4:12:FA:9C:33:08', visto: Date.now() },
+  { mac: SILENT_MAC, visto: Date.now() - 4 * 60 * 1000 },
 ];
 
 // Mock chat conversations from getUpdates.
@@ -30,6 +39,15 @@ function macFromPath(path, prefix) {
 }
 
 const fail = (erro, mensagem) => ({ ok: false, erro, mensagem });
+
+// Non-2xx reply, as the master sends: the app's api() throws it with .code set.
+function reject(code, message) {
+  return new Promise((_, rej) => setTimeout(() => {
+    const err = new Error(message);
+    err.code = code;
+    rej(err);
+  }, LATENCY));
+}
 
 // Telegram calls require active Wi-Fi and configured token.
 function telegramPrecondition(token) {
@@ -63,8 +81,8 @@ export function mockApi(method, path, body) {
   if (method === 'POST' && path === '/api/wifi') {
     const wrong = body.senha === '12345678';
     wifi = wrong
-      ? { ssid: body.ssid, conectado: false, ip: '' }
-      : { ssid: body.ssid, conectado: true, ip: '192.168.0.42' };
+      ? { ssid: body.ssid, conectado: false, ip: '', endereco: wifi.endereco }
+      : { ssid: body.ssid, conectado: true, ip: '192.168.0.42', endereco: wifi.endereco };
     return delay({ ok: true });
   }
 
@@ -111,11 +129,25 @@ export function mockApi(method, path, body) {
     const mac = macFromPath(path, '/api/dispositivos/');
     const device = { ...body, mac };
     const i = dispositivos.findIndex((d) => d.mac === mac);
-    if (i >= 0) dispositivos[i] = device;
-    else dispositivos.push(device);
+    const isNew = i < 0;
+    if (isNew) {
+      // A new belt is saved only if it asked to pair and confirms the PairAccept.
+      if (!pendentes.some((p) => p.mac === mac)) {
+        return reject('cinto_nao_pendente',
+          'This belt is not waiting to be set up. Press its pairing button.');
+      }
+      if (mac === SILENT_MAC) {
+        return reject('cinto_sem_resposta',
+          'The belt did not answer. Press its pairing button and try again.');
+      }
+      pendentes = pendentes.filter((p) => p.mac !== mac);
+      dispositivos.push(device);
+    } else {
+      dispositivos[i] = device;
+    }
     // eslint-disable-next-line no-console
     console.log('[mock] cinto salvo:\n' + JSON.stringify(device, null, 2));
-    return delay({ ok: true, confirmado_pelo_cinto: true });
+    return delay({ ok: true, confirmado_pelo_cinto: isNew });
   }
 
   // DELETE /api/dispositivos/{mac}
@@ -127,11 +159,17 @@ export function mockApi(method, path, body) {
 
   // GET /api/pendentes
   if (method === 'GET' && path === '/api/pendentes') {
-    return delay({ pendentes: [] });
+    const repeating = pendentes.find((p) => p.mac !== SILENT_MAC);
+    if (repeating) repeating.visto = Date.now();
+    return delay({
+      pendentes: pendentes.map((p) => ({ mac: p.mac, recebido_em: new Date(p.visto).toISOString() })),
+    });
   }
 
   // DELETE /api/pendentes/{mac}
   if (method === 'DELETE' && path.startsWith('/api/pendentes/')) {
+    const mac = macFromPath(path, '/api/pendentes/');
+    pendentes = pendentes.filter((p) => p.mac !== mac);
     return delay({ ok: true });
   }
 

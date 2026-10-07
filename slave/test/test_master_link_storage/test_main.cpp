@@ -15,6 +15,7 @@ constexpr const char* kRebootMarkerPath = "/test_master_link_reboot_marker.txt";
 constexpr const char* kMarkerSaveOk = "SAVE_OK";
 constexpr const char* kMarkerSaveFailed = "SAVE_FAILED";
 constexpr const char* kFakeMasterMac = "AA:BB:CC:DD:EE:01";
+constexpr uint8_t kFakeMasterChannel = 6;
 
 MasterLinkStorage* storage = nullptr;
 String writePhaseMarker;
@@ -50,10 +51,23 @@ void test_write_phase_before_reboot_succeeded() {
                                        "save() reported failure before the reboot");
 }
 
-void test_reload_after_reboot_restores_the_mac() {
+void test_reload_after_reboot_restores_the_mac_and_channel() {
     MasterLink loaded = storage->load();
     TEST_ASSERT_TRUE(loaded.hasMac());
     TEST_ASSERT_EQUAL_STRING(kFakeMasterMac, loaded.getMacAddress().c_str());
+    TEST_ASSERT_TRUE(loaded.hasChannel());
+    TEST_ASSERT_EQUAL_UINT8(kFakeMasterChannel, loaded.getChannel());
+}
+
+void test_out_of_range_channel_is_loaded_as_unknown() {
+    File f = LittleFS.open(kTestFilePath, "w");
+    TEST_ASSERT_TRUE(f);
+    f.print("{\"masterMac\":\"AA:BB:CC:DD:EE:01\",\"channel\":200}");
+    f.close();
+
+    MasterLink loaded = storage->load();
+    TEST_ASSERT_TRUE(loaded.hasMac());
+    TEST_ASSERT_FALSE(loaded.hasChannel());
 }
 
 void test_clear_removes_the_persisted_file() {
@@ -79,7 +93,7 @@ void setup() {
         Serial.println("\n=== PHASE 1: writing a fake master MAC, then rebooting ===");
 
         storage->clear();
-        bool ok = storage->save(MasterLink(kFakeMasterMac));
+        bool ok = storage->save(MasterLink(kFakeMasterMac, kFakeMasterChannel));
         Serial.printf("MasterLinkStorage::save() -> %s\n", ok ? "OK" : "FAILED");
 
         writeRebootMarker(ok ? kMarkerSaveOk : kMarkerSaveFailed);
@@ -96,7 +110,8 @@ void setup() {
 
     UNITY_BEGIN();
     RUN_TEST(test_write_phase_before_reboot_succeeded);
-    RUN_TEST(test_reload_after_reboot_restores_the_mac);
+    RUN_TEST(test_reload_after_reboot_restores_the_mac_and_channel);
+    RUN_TEST(test_out_of_range_channel_is_loaded_as_unknown);
     RUN_TEST(test_clear_removes_the_persisted_file);
     UNITY_END();
 

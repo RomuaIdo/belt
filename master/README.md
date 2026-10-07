@@ -8,12 +8,12 @@ PlatformIO project with the Arduino framework for the ESP32-S3-DevKitC-1
 | Directory | Responsibility |
 |---|---|
 | `include/App/` and `src/App/` | `AppController`, which coordinates Wi-Fi, ESP-NOW, pairing, the alert queue, Telegram sends and the config page |
-| `include/Domain/` and `src/Domain/` | Config, device and notification models |
+| `include/Domain/` and `src/Domain/` | Config, device and notification models, and `PendingPairingList` (belts waiting to be set up) |
 | `include/Messaging/` and `src/Messaging/` | `TelegramTask` (Telegram sends on a FreeRTOS task) and alert message formatting |
-| `include/Network/` and `src/Network/` | `EspNowTransceiver` (ESP-NOW radio wrapper) and `PairingService` (dashboard-initiated pairing state machine) |
+| `include/Network/` and `src/Network/` | `EspNowTransceiver` (ESP-NOW radio wrapper: the receive callback only queues frames) and `PairingService` (waits for a belt's confirmation while saving it) |
 | `include/Storage/` and `src/Storage/` | Config and queue persistence on LittleFS |
 | `include/Web/` and `src/Web/` | `WebPortal`: the config page's web server and the API it uses |
-| `include/Util/` | Shared utilities: MAC parsing/formatting and clock validity |
+| `include/Util/` | Clock validity. MAC parsing/formatting and the wire protocol (`Protocol/Message.h`) live in [../shared/](../shared/include), shared with the slave |
 | `src/main.cpp` | Firmware entry point: `setup()` and `loop()` |
 | [frontend/](frontend/) | Config page in HTML, CSS and JavaScript, written to LittleFS |
 | [test/](test/) | Unity suites, organized by component |
@@ -32,20 +32,34 @@ pairs with `src/Messaging/TelegramTask.cpp`. Includes use the path from
   (purging invalid files), brings up the master's own Wi-Fi network, starts
   ESP-NOW, and connects to the saved Wi-Fi (AP+STA mode).
 - `execute()`, called from `loop()`, services the config page, maintains
-  Wi-Fi and the clock (NTP, UTC-3), drains the ESP-NOW alert queue, ticks
-  the pairing state machine, collects finished sends and dispatches pending
-  ones to Telegram on FreeRTOS tasks (at most 2 at a time). The root
+  Wi-Fi and the clock (NTP, UTC-3), handles the ESP-NOW frames received since
+  the last step, collects finished sends and dispatches pending ones to
+  Telegram on FreeRTOS tasks (at most 2 at a time). The root
   certificate lives in `include/Messaging/telegram_certificate.h`.
 - `enqueueAlert(mac)` is the entry point for a belt's alert: it formats the
   peer's message, writes it to the queue, and the send happens in
   `execute()`. Network/5xx/429 failures retry with a 5s-to-5min backoff;
   HTTP 400/403 drops that chat.
-- Pairing has two symmetric modes, both completing in `handlePairingMessage()`:
-  a belt broadcasting unprompted (mode 1) gets an immediate `PairResponse`
-  and lands in a pending list surfaced by `GET /api/pendentes`, finalized
-  once the caregiver fills in its name/message/recipients; a MAC typed
-  directly into the dashboard (mode 2) triggers a bounded, blocking
-  handshake (`PUT /api/dispositivos/{mac}`) before it's saved.
+- Radio receive path: ESP-NOW calls back on the Wi-Fi task (a FreeRTOS task, not
+  a hardware interrupt), so `EspNowTransceiver` only copies each frame into a
+  queue. `execute()` drains it oldest first on the `loop()` task, where touching
+  the config and LittleFS is safe. Frames without the protocol's magic, a known
+  type and the exact size are dropped silently (other ESP-NOW traffic).
+- Alerts: an `Alert` from a registered belt is appended to the pending list
+  (`enqueueAlert()`), then acknowledged with `AlertAck` echoing its `seq`. A
+  resent alert (same `seq`) is acknowledged but not queued twice. An alert from an
+  unregistered MAC is dropped without an acknowledgement.
+- Pairing is always started by the belt (details in the
+  [root README](../README.md) and `shared/include/Protocol/Message.h`):
+  - a `PairRequest` from an unregistered MAC lists the belt under "Waiting to be
+    set up" (`GET /api/pendentes`) and gets `PairWait`; it leaves the list 15 s
+    after its last request (a belt repeats every 2 s), and at most 8 are listed;
+  - **Save** (`PUT /api/dispositivos/{mac}`) sends `PairAccept` with the master's
+    channel, resends it every 0.5 s and waits up to 1.5 s for the belt's
+    `PairConfirm`. Only then is the belt saved to `config.json`; otherwise nothing
+    is saved and the page shows "The belt did not answer" (HTTP 504);
+  - a `PairRequest` from an already registered MAC is accepted right away, which
+    lets a belt that lost the channel or its memory rejoin without the page.
 
 ## Setting up the master from a phone
 
@@ -75,18 +89,23 @@ straight into **Settings**.
 **3. Wi-Fi.** In Settings, "Search networks", pick the home network's
 **2.4 GHz** band (the ESP32 doesn't use 5 GHz), enter the password and
 "Connect". The phone may lose the master's signal for a second or two while
-its channel changes.
+its channel changes. Once connected, any device on the same home network can
+open the page at <http://cintoalerta.local> (or the IP shown in Settings),
+without using the master's weaker own network. If `.local` doesn't resolve
+(older Android, guest networks), use the IP.
 
 **4. Telegram.** On Telegram, message `@BotFather`, send `/newbot` and copy
 the token. On the page, paste the token, "Test" (the master queries Telegram
 and shows the bot's name) and "Save".
 
-**5. Belts.** On the home screen, press the pairing button on a belt (it
-shows up under "Waiting to be set up") or use "Add belt manually" and type
-its MAC. In the form: ask the person to open the bot on Telegram and press
+**5. Belts.** Press the pairing button on a belt: it shows up on the home screen
+under "Waiting to be set up" (it keeps asking for up to 5 minutes). Choose "Set
+up". In the form: ask the person to open the bot on Telegram and press
 **Start**, then use **Find conversations** and tick who should receive
-alerts. **Send test** sends a real message to those ticked; **Save** writes
-to `config.json`.
+alerts. **Send test** sends a real message to those ticked; **Save** pairs the
+belt (the master waits ~1.5 s for its confirmation) and writes to `config.json`.
+If the page says "The belt did not answer", press the belt's pairing button
+again and Save once more.
 
 If someone doesn't show up in "Find conversations", Telegram only keeps
 messages for 24h: ask them to message the bot again.
@@ -108,8 +127,8 @@ pio test -e esp32-s3-devkitc-1-test -f test_telegram_task
 
 The other suites are `test_alert_message`, `test_domain_models`,
 `test_notification`, `test_config_storage`, `test_call_queue_storage`,
-`test_pairing_service`, `test_protocol` and `test_board_specs`. Use the
-matching name with `-f`. Persistence suites write to flash; reboot tests
+`test_pairing_service`, `test_pending_pairing_list`, `test_protocol` (the shared
+wire protocol) and `test_board_specs`. Use the matching name with `-f`. Persistence suites write to flash; reboot tests
 need a board with a compatible serial connection.
 
 The test environment selects `Domain/`, `Storage/`, `Messaging/` and

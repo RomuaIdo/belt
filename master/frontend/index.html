@@ -28,10 +28,6 @@
     </header>
 
     <main class="wrap">
-      <div class="home-actions">
-        <button id="add-belt-btn" type="button" class="btn">Add belt manually</button>
-      </div>
-
       <!-- Status states -->
       <div id="home-status" class="status" hidden>
         <p id="home-status-text" class="status-text"></p>
@@ -223,21 +219,6 @@
       </form>
     </main>
   </div>
-
-  <!-- Add belt dialog -->
-  <dialog id="add-dialog" class="confirm">
-    <form method="dialog" id="add-form">
-      <p class="confirm-text"><strong>Add a belt manually</strong></p>
-      <label for="add-mac" class="label">Belt address (MAC)</label>
-      <input type="text" id="add-mac" autocomplete="off" autocapitalize="characters"
-             spellcheck="false" placeholder="AA:BB:CC:DD:EE:FF">
-      <p class="err" id="add-mac-err" hidden></p>
-      <div class="confirm-actions dialog-gap">
-        <button value="cancel" class="btn btn-quiet" formnovalidate>Cancel</button>
-        <button value="ok" id="add-ok" class="btn btn-primary">Continue</button>
-      </div>
-    </form>
-  </dialog>
 
   <!-- Confirm dialog -->
   <dialog id="confirm" class="confirm">

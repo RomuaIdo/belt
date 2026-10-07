@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <functional>
 
-// Manages active dashboard-initiated pairing state and timeout.
+// Tracks the wait for one belt's PairConfirm while Save runs, and its timeout.
 class PairingService {
 public:
     using NowMsFn = std::function<uint32_t()>;
@@ -13,7 +13,7 @@ public:
     void start(const String& targetMac); // Awaits targetMac confirmation
     void stop();
     void tick(); // Deactivates on timeout expiry
-    void confirm(); // Completes pairing on PairResponse
+    void confirm(); // Completes the wait when the belt's PairConfirm arrives
 
     bool isActive() const { return active; }
     bool isPendingFor(const String& mac) const;

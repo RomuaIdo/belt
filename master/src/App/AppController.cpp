@@ -1,12 +1,11 @@
 #include "App/AppController.h"
 
 #include <LittleFS.h>
+#include <ESPmDNS.h>
 #include <WiFi.h>
-#include <algorithm>
 #include <time.h>
 
 #include "Messaging/alert_message.h"
-#include "Protocol/PairingMessage.h"
 #include "Util/Clock.h"
 #include "Util/MacUtils.h"
 
@@ -17,6 +16,9 @@ constexpr const char* QUEUE_DIR = "/queue";
 constexpr const char* AP_SSID = "CintoAlerta-Master";
 constexpr const char* AP_PASSWORD = "cintoalerta";  // Minimum 8 characters for WPA2
 
+// Name on the home network: http://cintoalerta.local (mDNS) and the router's client list.
+constexpr const char* HOSTNAME = "cintoalerta";
+
 constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 30000;
 constexpr uint32_t RETRY_INITIAL_MS = 5000;
 constexpr uint32_t RETRY_MAX_MS = 300000;
@@ -26,43 +28,29 @@ constexpr const char* TIMEZONE = "<-03>3";
 constexpr const char* NTP_SERVER_1 = "pool.ntp.org";
 constexpr const char* NTP_SERVER_2 = "time.google.com";
 
-// Timeout for dashboard-initiated (mode 2) PairResponse.
-constexpr uint32_t PAIRING_CONFIRM_TIMEOUT_MS = 10000;
-constexpr uint8_t ESP_NOW_ACK_STATUS_OK = 0x01;
-constexpr uint8_t ALERT_EVENT_QUEUE_DEPTH = 8;
+// How long Save waits for the belt's PairConfirm, resending the PairAccept meanwhile.
+constexpr uint32_t PAIRING_CONFIRM_TIMEOUT_MS = 1500;
+constexpr uint32_t PAIR_ACCEPT_RESEND_MS = 500;
+
+// A belt asking to pair repeats its request every couple of seconds; one that stays
+// silent this long is no longer trying and leaves the "waiting" list.
+constexpr uint32_t PENDING_PAIRING_TTL_MS = 15000;
 
 bool isSuccess(int httpStatus) { return httpStatus >= 200 && httpStatus < 300; }
 
 // Permanent Telegram rejection (invalid chat or bot blocked).
 bool isPermanentRejection(int httpStatus) { return httpStatus == 400 || httpStatus == 403; }
-
-Protocol::PairingMessage makePairingMessage(Protocol::MessageType type) {
-    Protocol::PairingMessage msg{};
-    msg.type = type;
-    Protocol::fillKey(msg);
-    return msg;
-}
-
-// POD struct for FreeRTOS queue transfer.
-struct PendingAlertEvent {
-    char originMac[18];
-};
 }
 
 AppController::AppController(const String& configFilePath)
     : configStorage(configFilePath),
       pairingService(PAIRING_CONFIRM_TIMEOUT_MS, []() { return millis(); }),
+      pendingPairings(PENDING_PAIRING_TTL_MS),
       webPortal(config, configStorage, [this] {
           // Reconnect with new Wi-Fi credentials.
           WiFi.disconnect();
           connectWifi();
       }) {}
-
-AppController::~AppController() {
-    if (alertEventQueue != nullptr) {
-        vQueueDelete(alertEventQueue);
-    }
-}
 
 bool AppController::setup() {
     if (!LittleFS.begin(false)) {
@@ -80,9 +68,8 @@ bool AppController::setup() {
     Serial.printf("AppController: %u pending notification(s) in the queue\n",
                   static_cast<unsigned>(pendingNotifications.size()));
 
-    alertEventQueue = xQueueCreate(ALERT_EVENT_QUEUE_DEPTH, sizeof(PendingAlertEvent));
-
     // AP + STA: host config portal while maintaining Wi-Fi uplink.
+    WiFi.setHostname(HOSTNAME);  // Must precede WiFi.mode() to apply to the STA interface
     WiFi.mode(WIFI_AP_STA);
     WiFi.setAutoReconnect(true);
     if (WiFi.softAP(AP_SSID, AP_PASSWORD)) {
@@ -92,18 +79,23 @@ bool AppController::setup() {
         Serial.println("AppController: failed to start the master's own network");
     }
 
-    if (!espNow.init()) {
-        Serial.println("AppController: ESP-NOW init failed");
+    // Announces the page on the home network once the STA gets an IP.
+    if (MDNS.begin(HOSTNAME)) {
+        MDNS.addService("http", "tcp", 80);
+        Serial.printf("AppController: mDNS up; page at http://%s.local\n", HOSTNAME);
     } else {
-        registerAllPeers();
-        espNow.setOnMessageReceived([this](const String& mac, const uint8_t* data, int len) {
-            onEspNowMessage(mac, data, len);
-        });
+        Serial.println("AppController: mDNS failed; use the IP address instead");
+    }
+
+    if (espNow.init()) {
+        Serial.printf("AppController: ESP-NOW up; master MAC %s\n", WiFi.macAddress().c_str());
+    } else {
+        Serial.println("AppController: ESP-NOW init failed; pairing and alerts unavailable");
     }
 
     webPortal.setListPendingPairings([this] { return getPendingPairings(); });
     webPortal.setOnDiscardPending([this](const String& mac) { discardPendingPairing(mac); });
-    webPortal.setOnSaveDevice([this](const PeerNode& peer) { return pairAndSaveNewBelt(peer); });
+    webPortal.setOnSaveDevice([this](const PeerNode& peer) { return saveDevice(peer); });
     webPortal.begin();
 
     if (config.wifiSsid.isEmpty()) {
@@ -116,15 +108,10 @@ bool AppController::setup() {
 
 void AppController::execute() {
     webPortal.handle();
+    processRadio();
     maintainWifi();
     collectFinishedSends();
     dispatchPendingSends();
-    pairingService.tick();
-
-    PendingAlertEvent evt;
-    while (alertEventQueue != nullptr && xQueueReceive(alertEventQueue, &evt, 0) == pdTRUE) {
-        enqueueAlert(String(evt.originMac));
-    }
 }
 
 void AppController::connectWifi() {
@@ -149,12 +136,6 @@ void AppController::maintainWifi() {
 
     if (millis() - lastWifiAttemptMs >= WIFI_RETRY_INTERVAL_MS) {
         connectWifi();
-    }
-}
-
-void AppController::registerAllPeers() {
-    for (const auto& peer : config.getPeers()) {
-        espNow.registerPeer(peer.getMacAddress());
     }
 }
 
@@ -280,107 +261,153 @@ void AppController::dispatchPendingSends() {
     }
 }
 
-void AppController::onEspNowMessage(const String& senderMac, const uint8_t* payload, int len) {
-    // Route pairing messages separately from alert flow.
-    if (Protocol::isPairingMessage(payload, len)) {
-        handlePairingMessage(senderMac, payload, len);
+void AppController::processRadio() {
+    RadioFrame frame;
+    while (espNow.receive(frame)) {
+        processFrame(frame);
+    }
+}
+
+void AppController::processFrame(const RadioFrame& frame) {
+    // Anything without our magic, a known type and the exact size is not ours (other
+    // ESP-NOW traffic) or is malformed: dropped silently.
+    Protocol::Header header;
+    if (!Protocol::parseFrame(frame.data, frame.len, header)) return;
+
+    const String mac = MacUtils::format(frame.mac);
+    switch (header.type) {
+        case Protocol::MessageType::PairRequest:
+            handlePairRequest(mac);
+            break;
+        case Protocol::MessageType::PairConfirm:
+            handlePairConfirm(mac, header.seq);
+            break;
+        case Protocol::MessageType::Alert:
+            handleAlert(mac, header.seq);
+            break;
+        default:
+            // PairWait, PairAccept and AlertAck are sent by the master, never to it.
+            Serial.printf("AppController: unexpected message type 0x%02X from %s dropped\n",
+                          static_cast<unsigned>(header.type), mac.c_str());
+            break;
+    }
+}
+
+void AppController::sendMessage(const String& mac, Protocol::MessageType type, uint16_t seq) {
+    uint8_t frame[Protocol::kMaxFrameSize];
+    const size_t size = Protocol::buildFrame(frame, sizeof(frame), type, seq);
+    espNow.send(mac, frame, size);
+}
+
+void AppController::sendPairAccept(const String& mac, uint16_t seq) {
+    uint8_t frame[Protocol::kMaxFrameSize];
+    const size_t size = Protocol::buildPairAccept(frame, sizeof(frame), seq, EspNowTransceiver::channel());
+    espNow.send(mac, frame, size);
+}
+
+void AppController::handlePairRequest(const String& mac) {
+    if (config.findPeerByMac(mac) != nullptr) {
+        // Registered belt searching again (lost the channel or its memory): accept it
+        // right away. It answers with a PairConfirm, which needs no handling here.
+        sendPairAccept(mac, nextSeq++);
         return;
     }
 
-    // ACK immediately to terminate belt retry loop.
-    espNow.sendAck(senderMac, ESP_NOW_ACK_STATUS_OK);
+    // New belt: list it for the caregiver and tell it to wait. The belt keeps
+    // repeating its request, which keeps the entry alive.
+    const uint32_t epoch = isClockValid() ? static_cast<uint32_t>(time(nullptr)) : 0;
+    if (pendingPairings.heard(mac, millis(), epoch)) {
+        Serial.printf("AppController: belt %s is waiting to be set up\n", mac.c_str());
+    }
+    sendMessage(mac, Protocol::MessageType::PairWait, nextSeq++);
+}
 
-    if (config.findPeerByMac(senderMac) == nullptr) {
-        Serial.printf("AppController: alert from unregistered MAC %s ignored\n", senderMac.c_str());
+void AppController::handlePairConfirm(const String& mac, uint16_t seq) {
+    // Only meaningful while saveDevice() waits for it; anything else is stale.
+    if (!pairingService.isPendingFor(mac) || seq != acceptSeq) return;
+    pairConfirmed = true;
+    pairingService.confirm();
+}
+
+void AppController::handleAlert(const String& mac, uint16_t seq) {
+    if (config.findPeerByMac(mac) == nullptr) {
+        // Not acknowledged: the belt must not believe an alert we dropped was delivered.
+        Serial.printf("AppController: alert from unregistered MAC %s ignored\n", mac.c_str());
         return;
     }
 
-    // Defer processing to execute() loop.
-    PendingAlertEvent evt{};
-    senderMac.toCharArray(evt.originMac, sizeof(evt.originMac));
-    if (alertEventQueue != nullptr) {
-        xQueueSend(alertEventQueue, &evt, 0);
+    // Queue the alert at the back of the pending list, then acknowledge so the belt
+    // stops resending. A resent alert (same seq) is acknowledged but not queued again.
+    if (isNewAlert(mac, seq)) {
+        enqueueAlert(mac);
     }
+    sendMessage(mac, Protocol::MessageType::AlertAck, seq);
 }
 
-void AppController::handlePairingMessage(const String& senderMac, const uint8_t* payload, int len) {
-    (void)len; // Validated by isPairingMessage()
-    const auto* msg = reinterpret_cast<const Protocol::PairingMessage*>(payload);
-
-    if (msg->type == Protocol::MessageType::PairRequest) {
-        // Mode 1: reply to broadcast search and register pending pairing.
-        espNow.registerPeer(senderMac);
-        Protocol::PairingMessage response = makePairingMessage(Protocol::MessageType::PairResponse);
-        espNow.send(senderMac, reinterpret_cast<uint8_t*>(&response), sizeof(response));
-
-        if (config.findPeerByMac(senderMac) == nullptr) {
-            addPendingPairing(senderMac);
-        }
-        Serial.printf("AppController: belt %s is waiting to be set up\n", senderMac.c_str());
-        return;
-    }
-
-    if (msg->type == Protocol::MessageType::PairResponse) {
-        // Mode 2: confirm dashboard-initiated pairing.
-        if (!pairingService.isPendingFor(senderMac)) return; // Stale or mismatched response
-        espNow.registerPeer(senderMac);
-        config.addPeer(stagedPeer);
-        if (!configStorage.save(config)) {
-            Serial.println("AppController: failed to persist configuration");
-        }
-        pairingService.confirm();
-        Serial.printf("AppController: paired new belt %s (dashboard)\n", senderMac.c_str());
-    }
-}
-
-void AppController::addPendingPairing(const String& mac) {
-    for (auto& pending : pendingPairings) {
-        if (MacUtils::equal(pending.mac, mac)) {
-            pending.receivedAtEpoch = static_cast<uint32_t>(time(nullptr));
-            return;
+bool AppController::isNewAlert(const String& mac, uint16_t seq) {
+    for (auto& last : lastAlerts) {
+        if (MacUtils::equal(last.mac, mac)) {
+            if (last.seq == seq) return false;
+            last.seq = seq;
+            return true;
         }
     }
-    pendingPairings.push_back(PendingPairing{mac, static_cast<uint32_t>(time(nullptr))});
+    lastAlerts.push_back({mac, seq});
+    return true;
 }
 
-void AppController::discardPendingPairing(const String& mac) {
-    pendingPairings.erase(
-        std::remove_if(pendingPairings.begin(), pendingPairings.end(),
-                       [&](const PendingPairing& pending) { return MacUtils::equal(pending.mac, mac); }),
-        pendingPairings.end());
-}
-
-bool AppController::pairAndSaveNewBelt(const PeerNode& peer) {
+SaveDeviceResult AppController::saveDevice(const PeerNode& peer) {
     const String& mac = peer.getMacAddress();
 
     if (config.findPeerByMac(mac) != nullptr) {
-        // Existing peer: update without pairing handshake.
+        // Already paired: only its name, message and recipients change.
         config.removePeer(mac);
         config.addPeer(peer);
-        return configStorage.save(config);
+        return configStorage.save(config) ? SaveDeviceResult::Updated : SaveDeviceResult::StorageError;
     }
 
-    const bool alreadyPending = std::any_of(
-        pendingPairings.begin(), pendingPairings.end(),
-        [&](const PendingPairing& pending) { return MacUtils::equal(pending.mac, mac); });
-    if (alreadyPending) {
-        // Finalize mode 1 discovery from pending list.
-        discardPendingPairing(mac);
-        config.addPeer(peer);
-        return configStorage.save(config);
+    if (!pendingPairings.contains(mac, millis())) {
+        return SaveDeviceResult::NotWaiting;
+    }
+    if (!pairWithBelt(mac)) {
+        Serial.printf("AppController: belt %s did not confirm the pairing\n", mac.c_str());
+        return SaveDeviceResult::NoConfirmation;
     }
 
-    // Mode 2: unicast PairRequest and wait for belt confirmation.
-    stagedPeer = peer;
+    // The belt saved the master's MAC and channel; now the master saves the belt's.
+    config.addPeer(peer);
+    pendingPairings.remove(mac);
+    if (!configStorage.save(config)) {
+        return SaveDeviceResult::StorageError;
+    }
+    Serial.printf("AppController: paired new belt %s\n", mac.c_str());
+    return SaveDeviceResult::Paired;
+}
+
+bool AppController::pairWithBelt(const String& mac) {
+    acceptSeq = nextSeq++;
+    pairConfirmed = false;
     pairingService.start(mac);
-    Protocol::PairingMessage request = makePairingMessage(Protocol::MessageType::PairRequest);
-    espNow.send(mac, reinterpret_cast<uint8_t*>(&request), sizeof(request));
 
-    const uint32_t startMs = millis();
-    while (pairingService.isActive() && (millis() - startMs) < PAIRING_CONFIRM_TIMEOUT_MS) {
-        delay(50);
+    uint32_t lastSendMs = 0;
+    bool sentOnce = false;
+    while (pairingService.isActive()) {
+        const uint32_t now = millis();
+        if (!sentOnce || now - lastSendMs >= PAIR_ACCEPT_RESEND_MS) {
+            sendPairAccept(mac, acceptSeq);
+            lastSendMs = now;
+            sentOnce = true;
+        }
+
+        // Wait for frames in short slices. Anything that is not the awaited
+        // PairConfirm (other belts, alerts) is handled as usual.
+        RadioFrame frame;
+        if (espNow.receive(frame, 20)) {
+            processFrame(frame);
+        }
         pairingService.tick();
     }
 
-    return config.findPeerByMac(mac) != nullptr;
+    pairingService.stop();
+    return pairConfirmed;
 }
