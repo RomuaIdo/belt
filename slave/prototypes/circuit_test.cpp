@@ -1,3 +1,7 @@
+//nesse codigo, a mpu acorda a esp com uma interrupcao, 
+//a esp le a memoria da mpu e dispara o buzzer(gpio6). 
+//O buzzer desliga quando o botao(gpio5) é pressionado.
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
@@ -9,7 +13,7 @@ Adafruit_MPU6050 mpu;
 #define I2C_SCL 9
 #define MPU_INT_PIN 7
 
-const uint8_t MAX_ACCELERATION = 15; 
+const uint8_t MAX_ACCELERATION = 8; 
 
 // Função raiz para enviar bytes diretamente aos registradores da MPU
 void writeMPURegister(uint8_t reg, uint8_t data) {
