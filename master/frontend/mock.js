@@ -2,7 +2,7 @@
 
 const LATENCY = 300;
 
-let wifi = { ssid: '', conectado: false, ip: '', endereco: 'cintoalerta.local' };
+let wifi = { ssid: '', conectado: false, ip: '', endereco: 'cintoalerta.local', senha_incorreta: false };
 let telegramToken = '';
 
 let dispositivos = [
@@ -81,8 +81,14 @@ export function mockApi(method, path, body) {
   if (method === 'POST' && path === '/api/wifi') {
     const wrong = body.senha === '12345678';
     wifi = wrong
-      ? { ssid: body.ssid, conectado: false, ip: '', endereco: wifi.endereco }
-      : { ssid: body.ssid, conectado: true, ip: '192.168.0.42', endereco: wifi.endereco };
+      ? { ssid: body.ssid, conectado: false, ip: '', endereco: wifi.endereco, senha_incorreta: true }
+      : { ssid: body.ssid, conectado: true, ip: '192.168.0.42', endereco: wifi.endereco, senha_incorreta: false };
+    return delay({ ok: true });
+  }
+
+  // DELETE /api/wifi
+  if (method === 'DELETE' && path === '/api/wifi') {
+    wifi = { ssid: '', conectado: false, ip: '', endereco: wifi.endereco, senha_incorreta: false };
     return delay({ ok: true });
   }
 
