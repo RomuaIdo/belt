@@ -69,6 +69,7 @@ void WebPortal::begin() {
     server.on("/api/status", HTTP_GET, [this] { handleStatus(); });
     server.on("/api/wifi/redes", HTTP_GET, [this] { handleWifiNetworks(); });
     server.on("/api/wifi", HTTP_POST, [this] { handleWifiSave(); });
+    server.on("/api/wifi", HTTP_DELETE, [this] { handleWifiDelete(); });
     server.on("/api/telegram/testar-token", HTTP_POST, [this] { handleTokenTest(); });
     server.on("/api/telegram/token", HTTP_PUT, [this] { handleTokenSave(); });
     server.on("/api/telegram/conversas", HTTP_GET, [this] { handleChats(); });
@@ -150,6 +151,7 @@ void WebPortal::handleStatus() {
     doc["wifi"]["conectado"] = connected;
     doc["wifi"]["ip"] = connected ? WiFi.localIP().toString() : String();
     doc["wifi"]["endereco"] = String(WiFi.getHostname()) + ".local";
+    doc["wifi"]["senha_incorreta"] = wifiWrongPassword ? wifiWrongPassword() : false;
     doc["telegram"]["configurado"] = !config.telegramBotToken.isEmpty();
     doc["relogio_ok"] = isClockValid();
     sendJson(200, doc);
@@ -162,7 +164,14 @@ void WebPortal::handleWifiNetworks() {
         bool open;
     };
 
-    const int count = WiFi.scanNetworks();  // Blocking (2-3s)
+    // Wait for any in-flight scan to finish.
+    int count = WiFi.scanNetworks();
+    if (count == WIFI_SCAN_RUNNING) {
+        const uint32_t deadline = millis() + 4000;
+        while ((count = WiFi.scanComplete()) == WIFI_SCAN_RUNNING && millis() < deadline) {
+            delay(50);
+        }
+    }
     if (count < 0) {
         sendError(500, "erro_scan", "Could not scan for networks. Try again.");
         return;
@@ -217,6 +226,20 @@ void WebPortal::handleWifiSave() {
 
     config.wifiSsid = ssid;
     config.wifiPassword = password;
+    if (!configStorage.save(config)) {
+        sendError(500, "erro_gravacao", "Could not save the settings.");
+        return;
+    }
+
+    onWifiChanged();
+    JsonDocument doc;
+    doc["ok"] = true;
+    sendJson(200, doc);
+}
+
+void WebPortal::handleWifiDelete() {
+    config.wifiSsid = "";
+    config.wifiPassword = "";
     if (!configStorage.save(config)) {
         sendError(500, "erro_gravacao", "Could not save the settings.");
         return;

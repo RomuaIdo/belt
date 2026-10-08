@@ -13,6 +13,7 @@
 #include "Protocol/Message.h"
 #include "Storage/CallQueueStorage.h"
 #include "Storage/ConfigStorage.h"
+#include "Util/StatusLed.h"
 #include "Web/WebPortal.h"
 
 class AppController {
@@ -37,9 +38,19 @@ public:
 
 private:
     static constexpr size_t MAX_PARALLEL_SENDS = 2;
+    static constexpr uint8_t STATUS_LED_PIN = 48;  // Onboard RGB LED on DevKitC-1 v1.0 (v1.1 uses 38)
 
+    // Wi-Fi: scan for the saved network, connect only when it is nearby, and
+    // stop retrying once the password is rejected.
+    void onWifiConfigChanged();
     void connectWifi();
     void maintainWifi();
+    void scheduleWifiScan(uint32_t delayMs);
+    void startWifiScan();
+    void checkWifiScanResult();
+    void onWifiStaDisconnected(uint8_t reason);
+    StatusLed::State wifiLedState() const;
+
     void collectFinishedSends();
     void dispatchPendingSends();
     bool isSending(const String& eventId, const String& chatId) const;
@@ -98,6 +109,18 @@ private:
     uint32_t lastFailureMs = 0;
     uint32_t retryDelayMs = 0;
 
-    uint32_t lastWifiAttemptMs = 0;
+    // Wi-Fi reconnection. autoReconnect is off, so maintainWifi() is the only
+    // caller of WiFi.begin().
+    uint32_t lastWifiScanMs = 0;
+    uint32_t wifiScanDelayMs = 0;        // Wait after lastWifiScanMs before the next scan
+    uint32_t wifiScanStartedMs = 0;
+    bool wifiScanRunning = false;
+    bool wifiConnecting = false;
+    bool wifiWrongPassword = false;      // No retries until the Wi-Fi settings change
+    uint8_t wifiQuickRetries = 0;        // Non-password failures since the last scan hit
+    uint32_t wifiRetryAtMs = 0;          // 0 = no quick retry pending
+    bool wifiWaitingForNetwork = false;  // Only the periodic scan is left (LED shows disconnected)
     bool ntpStarted = false;
+
+    StatusLed statusLed{STATUS_LED_PIN};
 };

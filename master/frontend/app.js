@@ -41,21 +41,33 @@ function telegramMessage(code) {
 
 // API layer
 
-async function api(method, path, body) {
+// timeoutMs aborts a request stuck on a dropped connection (e.g. while the master
+// switches its Wi-Fi channel) so a polling loop can retry instead of hanging.
+async function api(method, path, body, timeoutMs) {
   if (MOCK) return mockApi(method, path, body);
   const opts = { method, headers: {} };
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
-  const res = await fetch(API_BASE + path, opts);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data.mensagem || `HTTP ${res.status}`);
-    err.code = data.erro;
-    throw err;
+  let timer;
+  if (timeoutMs) {
+    const controller = new AbortController();
+    opts.signal = controller.signal;
+    timer = setTimeout(() => controller.abort(), timeoutMs);
   }
-  return data;
+  try {
+    const res = await fetch(API_BASE + path, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.mensagem || `HTTP ${res.status}`);
+      err.code = data.erro;
+      throw err;
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Utilities
@@ -294,7 +306,10 @@ function applyStatus(status) {
     ? 'No network saved yet.'
     : wifi.conectado
       ? `Connected to "${wifi.ssid}". On that network, open http://${wifi.endereco} (or http://${wifi.ip}). The master reconnects by itself when it powers on.`
-      : `Saved network: "${wifi.ssid}". The master is not connected to it right now.`;
+      : wifi.senha_incorreta
+        ? `Wrong password for "${wifi.ssid}". Enter the correct password and press Connect, or forget this network.`
+        : `Saved network: "${wifi.ssid}". The master connects automatically once it is nearby.`;
+  $('wifi-forget').hidden = !wifi.ssid;
   if (wifi.ssid && !$('wifi-ssid').value) $('wifi-ssid').value = wifi.ssid;
 
   $('tg-badge').textContent = telegram.configurado ? 'Token saved' : 'Not set up';
@@ -355,16 +370,16 @@ async function connectWifi() {
 
   const btn = $('wifi-connect');
   btn.disabled = true;
-  setResult(result, 'Connecting…');
+  setResult(result, 'Searching and connecting…');
   try {
     await api('POST', '/api/wifi', { ssid, senha: pass });
 
-    // Wait for connection; network drops during channel switches are ignored.
-    await sleep(2500);
+    // Wait for initial scan and connection attempt.
+    await sleep(3000);
     const deadline = Date.now() + 25000;
     while (Date.now() < deadline) {
       try {
-        const status = await api('GET', '/api/status');
+        const status = await api('GET', '/api/status', undefined, 3000);
         applyStatus(status);
         if (status.wifi.conectado) {
           setResult(result,
@@ -372,15 +387,37 @@ async function connectWifi() {
             'ok');
           return;
         }
+        if (status.wifi.senha_incorreta) {
+          setResult(result, `Wrong password for "${ssid}". Check it and try again.`, 'bad');
+          return;
+        }
       } catch (e) { // Retry
       }
       await sleep(1500);
     }
     setResult(result,
-      "Couldn't connect. Check the password and that this is a 2.4 GHz network. The master keeps trying.",
+      "Couldn't connect yet. Check that this is a 2.4 GHz network; the master keeps trying while it's nearby.",
       'bad');
   } catch (e) {
     setResult(result, e.message, 'bad');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function forgetWifi() {
+  const result = $('wifi-result');
+  const btn = $('wifi-forget');
+  btn.disabled = true;
+  try {
+    await api('DELETE', '/api/wifi');
+    $('wifi-ssid').value = '';
+    $('wifi-pass').value = '';
+    setResult(result, 'Network forgotten.', 'ok');
+    toast('Wi-Fi network forgotten.');
+    refreshStatus();
+  } catch (e) {
+    setResult(result, "Couldn't forget the network. Try again.", 'bad');
   } finally {
     btn.disabled = false;
   }
@@ -715,6 +752,7 @@ $('open-settings').addEventListener('click', openSettings);
 $('settings-back').addEventListener('click', () => loadHome());
 $('wifi-scan').addEventListener('click', scanNetworks);
 $('wifi-connect').addEventListener('click', connectWifi);
+$('wifi-forget').addEventListener('click', forgetWifi);
 $('tg-token').addEventListener('input', onTokenInput);
 $('tg-test').addEventListener('click', testToken);
 $('tg-save').addEventListener('click', saveToken);

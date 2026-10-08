@@ -24,11 +24,11 @@ class WebPortal {
 public:
     using PendingPairingsProvider = std::function<std::vector<PendingPairing>()>;
     using DiscardPendingCallback = std::function<void(const String& mac)>;
-    // Saves a belt. For a new one it runs the pairing handshake first (blocks up to
-    // ~1.5 s waiting for the belt) and saves only if the belt confirms.
+    using WifiWrongPasswordProvider = std::function<bool()>;
+    // Saves a belt (executes handshake for new belts, saving on confirmation).
     using SaveDeviceCallback = std::function<SaveDeviceResult(const PeerNode& peer)>;
 
-    // Invoked after saving new Wi-Fi credentials to reconnect.
+    // onWifiChanged callback triggered when credentials are saved or deleted.
     WebPortal(SystemConfig& config, ConfigStorage& configStorage,
               std::function<void()> onWifiChanged);
 
@@ -38,11 +38,11 @@ public:
     void setListPendingPairings(PendingPairingsProvider callback) { listPendingPairings = std::move(callback); }
     void setOnDiscardPending(DiscardPendingCallback callback) { onDiscardPending = std::move(callback); }
     void setOnSaveDevice(SaveDeviceCallback callback) { onSaveDevice = std::move(callback); }
+    void setWifiWrongPasswordProvider(WifiWrongPasswordProvider callback) { wifiWrongPassword = std::move(callback); }
 
 private:
     void serveFile(const char* path, const char* contentType);
 
-    // Sends JSON response ({ok:false, erro, mensagem}).
     void sendJson(int code, const JsonDocument& doc);
     void sendError(int code, const char* error, const String& message);
     bool readBody(JsonDocument& doc);
@@ -53,6 +53,7 @@ private:
     void handleStatus();
     void handleWifiNetworks();
     void handleWifiSave();
+    void handleWifiDelete();
     void handleTokenTest();
     void handleTokenSave();
     void handleChats();
@@ -70,4 +71,5 @@ private:
     PendingPairingsProvider listPendingPairings;
     DiscardPendingCallback onDiscardPending;
     SaveDeviceCallback onSaveDevice;
+    WifiWrongPasswordProvider wifiWrongPassword;
 };
