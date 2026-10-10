@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 
+#include "Alert/AlertService.h"
 #include "Domain/MasterLink.h"
 #include "Domain/SampleBuffer.h"
 #include "Input/Button.h"
@@ -10,6 +11,7 @@
 #include "Pairing/PairingService.h"
 #include "Protocol/Message.h"
 #include "Sensor/Mpu6050.h"
+#include "State/StateHandler.h"
 #include "Storage/MasterLinkStorage.h"
 #include "Util/AppConfig.h"
 
@@ -27,6 +29,10 @@
 //
 // IMU: the MPU-6050 is read every kImuSampleIntervalMs (100 Hz) and each sample goes
 // into a circular buffer holding the last kImuBufferSamples (~3 s).
+//
+// Feedback: the StateHandler shows the pairing/alert state on the LED, buzzer and
+// vibration motor; this class only reports snapshot() each loop and notify()s the
+// transitions (paired, timed out, alert sent/rejected, boot fault).
 class AppController {
 public:
     AppController();
@@ -44,6 +50,7 @@ private:
     void sendMessage(const String& mac, Protocol::MessageType type, uint16_t seq);
     void restoreMasterChannel();
     void processImu();
+    SystemSnapshot snapshot() const;
 
     MasterLinkStorage masterLinkStorage;
     MasterLink masterLink;
@@ -51,8 +58,11 @@ private:
     Button pairingButton;
     Button alertButton;
     PairingService pairingService;
+    AlertService alertService;
+    StateHandler stateHandler;
     ChannelScanner channelScanner;
     Mpu6050 mpu;
+    bool radioReady = false;       // espNow.init() succeeded
     SampleBuffer<AppConfig::kImuBufferSamples> imuBuffer;
     bool mpuReady = false;         // begin() succeeded; reads are skipped otherwise
     uint32_t lastImuReadMs = 0;    // last IMU read
@@ -62,7 +72,4 @@ private:
     uint32_t lastRequestMs = 0;    // last PairRequest sent while waiting
     uint32_t lastMasterSignalMs = 0;  // last PairWait heard while waiting
     uint16_t nextSeq = 1;
-
-    uint32_t alertPressStartMs = 0;  // when the alert button was pressed
-    bool alertSent = false;          // the current hold already sent its alert
 };

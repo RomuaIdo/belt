@@ -9,6 +9,8 @@ AppController::AppController()
       pairingButton(AppConfig::kButtonDebounceMs, /*activeLow=*/true),
       alertButton(AppConfig::kButtonDebounceMs, /*activeLow=*/true),
       pairingService(AppConfig::kPairingTimeoutMs, []() { return millis(); }),
+      alertService(AppConfig::kAlertHoldMs, []() { return millis(); }),
+      stateHandler(AppConfig::kStatusLedPin, AppConfig::kBuzzerPin, AppConfig::kVibrationPin),
       channelScanner(AppConfig::kPairingMinChannel, AppConfig::kPairingMaxChannel,
                      AppConfig::kPairingChannelDwellMs, []() { return millis(); }),
       mpu(Wire) {}
@@ -27,8 +29,10 @@ void AppController::setup() {
 
     pinMode(AppConfig::kPairingButtonPin, INPUT_PULLUP);
     pinMode(AppConfig::kAlertButtonPin, INPUT_PULLUP);
+    stateHandler.begin();
 
-    if (!espNow.init()) {
+    radioReady = espNow.init();
+    if (!radioReady) {
         Serial.println("AppController: ESP-NOW init failed");
     }
 
@@ -45,6 +49,8 @@ void AppController::setup() {
         restoreMasterChannel();
     }
 
+    if (!radioReady || !mpuReady) stateHandler.notify(SystemEvent::BootFault, millis());
+
     Serial.println("AppController: setup complete");
 }
 
@@ -59,13 +65,10 @@ void AppController::loop() {
     const uint32_t buttonNow = millis();
     if (alertButton.update(digitalRead(AppConfig::kAlertButtonPin), buttonNow)) {
         Serial.println("AppController: Alert button pressed, looking for the master...");
-        alertPressStartMs = buttonNow;
-        alertSent = false;
+        alertService.onPress();
     }
-    if (alertButton.isPressed() && !alertSent &&
-        buttonNow - alertPressStartMs >= AppConfig::kAlertHoldMs) {
-        alertSent = true;  // one alert per hold
-        sendAlert();
+    if (alertService.update(alertButton.isPressed())) {
+        sendAlert();  // once per hold
     }
 
     if (pairingService.isSearching() && channelScanner.tick()) {
@@ -94,7 +97,14 @@ void AppController::loop() {
         Serial.println("AppController: pairing attempt timed out");
         pairingService.reset();
         restoreMasterChannel();  // scanning left the radio on an arbitrary channel
+        stateHandler.notify(SystemEvent::PairingTimedOut, millis());
     }
+
+    stateHandler.update(snapshot(), millis());
+}
+
+SystemSnapshot AppController::snapshot() const {
+    return {pairingService.getState(), alertService.getState()};
 }
 
 void AppController::processImu() {
@@ -129,10 +139,13 @@ void AppController::startPairing() {
 void AppController::sendAlert() {
     if (!masterLink.hasMac()) {
         Serial.println("AppController: alert ignored, no master configured");
+        alertService.abort();
+        stateHandler.notify(SystemEvent::AlertRejected, millis());
         return;
     }
     Serial.println("AppController: alert button held, sending alert to the master");
     sendMessage(masterLink.getMacAddress(), Protocol::MessageType::Alert, nextSeq++);
+    stateHandler.notify(SystemEvent::AlertSent, millis());
 }
 
 void AppController::restoreMasterChannel() {
@@ -215,6 +228,7 @@ void AppController::handlePairAccept(const String& sender, uint16_t seq, uint8_t
         pairingService.onPairAccepted();
         Serial.printf("AppController: paired with master %s (channel %u)\n", sender.c_str(),
                       static_cast<unsigned>(channel));
+        stateHandler.notify(SystemEvent::PairingSucceeded, millis());
     }
 
     // Answer every PairAccept: the master resends it until it hears this.
