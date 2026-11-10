@@ -19,10 +19,11 @@ StateHandler makeHandler() {
     return handler;
 }
 
-SystemSnapshot snap(Pairing pairing, Fall fall = Fall::Idle) {
+SystemSnapshot snap(Pairing pairing, Fall fall = Fall::Idle, bool alertPending = false) {
     SystemSnapshot snapshot;
     snapshot.pairing = pairing;
     snapshot.fall = fall;
+    snapshot.alertPending = alertPending;
     return snapshot;
 }
 }  // namespace
@@ -36,6 +37,38 @@ void test_resolve_state_priority() {
     TEST_ASSERT_EQUAL(asInt(SystemState::FallCountdown), asInt(resolveState(snap(Pairing::Idle, Fall::Countdown))));
     TEST_ASSERT_EQUAL(asInt(SystemState::FallCountdown),
                       asInt(resolveState(snap(Pairing::Searching, Fall::Countdown))));
+    TEST_ASSERT_EQUAL(asInt(SystemState::AlertSending),
+                      asInt(resolveState(snap(Pairing::Waiting, Fall::Idle, true))));
+    TEST_ASSERT_EQUAL(asInt(SystemState::FallCountdown),
+                      asInt(resolveState(snap(Pairing::Idle, Fall::Countdown, true))));
+}
+
+void test_waiting_for_the_ack_keeps_the_belt_busy() {
+    StateHandler handler = makeHandler();
+
+    handler.update(snap(Pairing::Idle, Fall::Idle, true), 0);
+    TEST_ASSERT_EQUAL(asInt(SystemState::AlertSending), asInt(handler.state()));
+    TEST_ASSERT_FALSE(handler.isIdle(0));  // no sleep while waiting
+    TEST_ASSERT_TRUE(handler.ledIsOn());
+
+    handler.update(snap(Pairing::Idle), 5000);  // ack arrived
+    handler.notify(SystemEvent::AlertSent, 5000);
+    TEST_ASSERT_TRUE(handler.vibrationIsOn());
+    handler.update(snap(Pairing::Idle), 5400);
+    TEST_ASSERT_TRUE(handler.isIdle(5400));
+}
+
+void test_alert_failed_beeps_three_times() {
+    StateHandler handler = makeHandler();
+
+    handler.notify(SystemEvent::AlertFailed, 0);  // buzzer and LED 3x 150/150
+    TEST_ASSERT_TRUE(handler.buzzerIsOn());
+    TEST_ASSERT_TRUE(handler.ledIsOn());
+    handler.update(snap(Pairing::Idle), 200);
+    TEST_ASSERT_FALSE(handler.buzzerIsOn());
+    handler.update(snap(Pairing::Idle), 900);
+    TEST_ASSERT_FALSE(handler.buzzerIsOn());
+    TEST_ASSERT_TRUE(handler.isIdle(900));
 }
 
 void test_idle_does_nothing() {
@@ -158,6 +191,8 @@ void setup() {
     UNITY_BEGIN();
     RUN_TEST(test_resolve_state_priority);
     RUN_TEST(test_idle_does_nothing);
+    RUN_TEST(test_waiting_for_the_ack_keeps_the_belt_busy);
+    RUN_TEST(test_alert_failed_beeps_three_times);
     RUN_TEST(test_pairing_blinks_the_led_until_it_ends);
     RUN_TEST(test_fall_overrides_pairing_and_pairing_resumes);
     RUN_TEST(test_fall_countdown_keeps_going_until_it_ends);

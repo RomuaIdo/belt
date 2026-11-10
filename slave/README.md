@@ -59,7 +59,9 @@ The whole attempt times out after 5 minutes.
 
 **Alert** (alert button, GPIO 5). One click sends an `Alert` to the paired master. Without
 a paired master the click is rejected. During a fall countdown the click cancels the fall
-instead. The protocol also defines `AlertAck` and resending, which the belt does not use yet.
+instead. After sending, the belt stays awake in `AlertSending` and resends the `Alert` with
+the same seq every 500 ms until the master's `AlertAck` arrives (`AlertSent`), for up to 10
+attempts (`AlertFailed`). The master acknowledges every copy but queues the call once.
 
 **Fall detection.** The BMI270 (SPI) samples accel and gyro at 50 Hz into its FIFO, which
 holds the last ~3.4 s.
@@ -73,11 +75,19 @@ holds the last ~3.4 s.
    and SisFall results: [`prototypes/fall_model/README.md`](prototypes/fall_model/README.md).
 4. A confirmed fall starts `FallCountdown` (10 s): LED, buzzer, and vibration go off so the
    wearer notices. A click on the alert button cancels it (false positive). Otherwise the
-   `Alert` goes to the master when the countdown ends.
+   `Alert` goes to the master when the countdown ends, with the same ack flow as a click.
 
-Not implemented yet: sleep (the prototype in `prototypes/bmi270_fall_detect.cpp` uses
-light sleep, which still has to be reconciled with ESP-NOW and the buttons), and
-`AlertAck` handling with resend.
+**Power.** When nothing is happening, the ESP goes into light sleep, as in
+`prototypes/bmi270_fall_detect.cpp`. Nothing is happening when the `StateHandler` is idle,
+no pairing is running, no alert is waiting for its ack, and both buttons are released.
+
+- While still, it sleeps until any-motion raises INT1.
+- While moving, it sleeps until the next 1 s FIFO read. INT1 stays latched while moving,
+  so a timer is used then.
+- Either button also wakes it.
+
+The S3 USB serial drops during light sleep: set `AppConfig::kUseLightSleep = false` to
+debug over USB.
 
 ## State feedback
 
@@ -94,18 +104,20 @@ nothing and `isIdle()` returns true, so the belt can go to sleep.
 | `Idle` | Everything off |
 | `PairingSearching` | LED blinks blue, 150 ms on / 150 ms off |
 | `PairingWaiting` | LED blinks blue, 500 ms on / 500 ms off |
+| `AlertSending` | LED blinks red, 100 ms on / 100 ms off (waiting for the `AlertAck`) |
 | `FallCountdown` | LED blinks red 200/200 ms, buzzer beeps 200 ms every 1 s, motor vibrates 500/500 ms |
 
 | Event | Behavior (placeholder values) |
 |---|---|
 | `PairingSucceeded` | Two quick beeps and a 400 ms green LED pulse |
 | `PairingTimedOut` | One 500 ms beep |
-| `AlertSent` | One 400 ms vibration and red LED pulse |
+| `AlertSent` | One 400 ms vibration and red LED pulse (master acknowledged) |
 | `AlertRejected` | Two short vibrations |
+| `AlertFailed` | Three beeps and red LED blinks (no `AlertAck` after every retry) |
 | `FallCancelled` | One 400 ms green LED pulse |
 | `BootFault` | LED blinks red three times (radio or IMU failed to start) |
 
-State priority is fall countdown, then pairing, then idle. Every transition is logged on the serial
+State priority is fall countdown, then alert, then pairing, then idle. Every transition is logged on the serial
 monitor, for example `StateHandler: Idle -> PairingSearching`.
 
 To change what an output does, edit the tables in

@@ -11,6 +11,7 @@ enum class SystemState : uint8_t {
     Idle,
     PairingSearching,  // scanning channels for the master
     PairingWaiting,    // master answered, waiting for the caregiver to press Save
+    AlertSending,      // alert sent, resending until the master's AlertAck
     FallCountdown,     // fall confirmed: the alert goes out unless the wearer cancels
 };
 
@@ -18,8 +19,9 @@ enum class SystemState : uint8_t {
 enum class SystemEvent : uint8_t {
     PairingSucceeded,
     PairingTimedOut,
-    AlertSent,
+    AlertSent,      // the master acknowledged the alert
     AlertRejected,  // no master to send to
+    AlertFailed,    // no AlertAck after every retry
     FallCancelled,  // wearer cancelled the fall countdown
     BootFault,      // radio or IMU failed to start
 };
@@ -28,11 +30,13 @@ enum class SystemEvent : uint8_t {
 struct SystemSnapshot {
     PairingService::State pairing = PairingService::State::Idle;
     FallService::State fall = FallService::State::Idle;
+    bool alertPending = false;  // waiting for the AlertAck
 };
 
-// Priority: fall > pairing > idle.
+// Priority: fall > alert > pairing > idle.
 inline SystemState resolveState(const SystemSnapshot& snapshot) {
     if (snapshot.fall == FallService::State::Countdown) return SystemState::FallCountdown;
+    if (snapshot.alertPending) return SystemState::AlertSending;
     switch (snapshot.pairing) {
         case PairingService::State::Searching: return SystemState::PairingSearching;
         case PairingService::State::Waiting: return SystemState::PairingWaiting;
@@ -46,6 +50,7 @@ inline const char* toString(SystemState state) {
         case SystemState::Idle: return "Idle";
         case SystemState::PairingSearching: return "PairingSearching";
         case SystemState::PairingWaiting: return "PairingWaiting";
+        case SystemState::AlertSending: return "AlertSending";
         case SystemState::FallCountdown: return "FallCountdown";
     }
     return "?";
@@ -57,6 +62,7 @@ inline const char* toString(SystemEvent event) {
         case SystemEvent::PairingTimedOut: return "PairingTimedOut";
         case SystemEvent::AlertSent: return "AlertSent";
         case SystemEvent::AlertRejected: return "AlertRejected";
+        case SystemEvent::AlertFailed: return "AlertFailed";
         case SystemEvent::FallCancelled: return "FallCancelled";
         case SystemEvent::BootFault: return "BootFault";
     }

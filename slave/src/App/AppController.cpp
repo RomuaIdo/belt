@@ -4,6 +4,8 @@
 #include <LittleFS.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <driver/gpio.h>
+#include <esp_sleep.h>
 
 static_assert(Bmi270::kFifoMaxFrames <= FallDetector::kMaxFramesPerRead,
               "FallDetector must hold a whole FIFO read");
@@ -81,6 +83,7 @@ void AppController::loop() {
         Serial.println("AppController: fall not cancelled in time");
         sendAlert();
     }
+    resendAlert();
 
     if (pairingService.isSearching() && channelScanner.tick()) {
         espNow.setChannel(channelScanner.currentChannel());
@@ -112,10 +115,11 @@ void AppController::loop() {
     }
 
     stateHandler.update(snapshot(), millis());
+    maybeSleep();
 }
 
 SystemSnapshot AppController::snapshot() const {
-    return {pairingService.getState(), fallService.getState()};
+    return {pairingService.getState(), fallService.getState(), alertPending};
 }
 
 void AppController::processImu() {
@@ -167,9 +171,84 @@ void AppController::sendAlert() {
         stateHandler.notify(SystemEvent::AlertRejected, millis());
         return;
     }
+    if (alertPending) {
+        Serial.println("AppController: an alert is already waiting for its ack");
+        return;
+    }
     Serial.println("AppController: sending alert to the master");
-    sendMessage(masterLink.getMacAddress(), Protocol::MessageType::Alert, nextSeq++);
+    alertPending = true;
+    alertSeq = nextSeq++;
+    alertAttempts = 1;
+    lastAlertSendMs = millis();
+    sendMessage(masterLink.getMacAddress(), Protocol::MessageType::Alert, alertSeq);
+}
+
+// Same seq on every resend: the master acknowledges it again without queuing it twice.
+void AppController::resendAlert() {
+    if (!alertPending || millis() - lastAlertSendMs < AppConfig::kAlertRetryIntervalMs) return;
+    if (alertAttempts >= AppConfig::kAlertMaxAttempts) {
+        Serial.println("AppController: no AlertAck from the master, giving up");
+        alertPending = false;
+        stateHandler.notify(SystemEvent::AlertFailed, millis());
+        return;
+    }
+    alertAttempts++;
+    lastAlertSendMs = millis();
+    sendMessage(masterLink.getMacAddress(), Protocol::MessageType::Alert, alertSeq);
+}
+
+void AppController::handleAlertAck(const String& sender, uint16_t seq) {
+    if (!alertPending || seq != alertSeq) return;  // stale or not ours
+    if (!masterLink.hasMac() || !MacUtils::equal(sender, masterLink.getMacAddress())) return;
+    Serial.printf("AppController: master acknowledged the alert (attempt %u)\n", static_cast<unsigned>(alertAttempts));
+    alertPending = false;
     stateHandler.notify(SystemEvent::AlertSent, millis());
+}
+
+// Light sleep when nothing is happening, as in prototypes/bmi270_fall_detect.cpp.
+// Still: until any-motion raises INT1. Moving: until the next FIFO read (INT1 stays
+// latched while moving, so it cannot be a wake source then). Both buttons wake it.
+void AppController::maybeSleep() {
+    if (!AppConfig::kUseLightSleep) return;
+
+    const uint32_t now = millis();
+    if (!stateHandler.isIdle(now) || pairingService.isActive() || alertPending || fallService.isCountingDown()) return;
+    if (digitalRead(AppConfig::kPairingButtonPin) == LOW || digitalRead(AppConfig::kAlertButtonPin) == LOW ||
+        pairingButton.isPressed() || alertButton.isPressed()) {
+        return;  // pressed, or the release is still being debounced
+    }
+
+    uint32_t timerMs = 0;
+    bool wakeOnImu = false;
+    if (imuReady && imuActive) {
+        const uint32_t elapsed = now - lastImuReadMs;
+        if (elapsed >= AppConfig::kImuReadIntervalMs) return;  // a read is due
+        timerMs = AppConfig::kImuReadIntervalMs - elapsed;
+    } else if (imuReady) {
+        if (digitalRead(AppConfig::kImuIntPin) == HIGH) return;  // movement to handle first
+        wakeOnImu = true;
+    }
+
+    const gpio_num_t pairingPin = static_cast<gpio_num_t>(AppConfig::kPairingButtonPin);
+    const gpio_num_t alertPin = static_cast<gpio_num_t>(AppConfig::kAlertButtonPin);
+    const gpio_num_t imuPin = static_cast<gpio_num_t>(AppConfig::kImuIntPin);
+
+    Serial.flush();
+    gpio_wakeup_enable(pairingPin, GPIO_INTR_LOW_LEVEL);
+    gpio_wakeup_enable(alertPin, GPIO_INTR_LOW_LEVEL);
+    if (wakeOnImu) gpio_wakeup_enable(imuPin, GPIO_INTR_HIGH_LEVEL);
+    esp_sleep_enable_gpio_wakeup();
+    if (timerMs > 0) esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(timerMs) * 1000);
+
+    esp_light_sleep_start();
+
+    // Back to no interrupt type: left at a level type, a pin still at that level
+    // would keep firing the GPIO interrupt and trip the interrupt watchdog.
+    gpio_wakeup_disable(pairingPin);
+    gpio_wakeup_disable(alertPin);
+    if (wakeOnImu) gpio_wakeup_disable(imuPin);
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+    if (timerMs > 0) esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
 }
 
 void AppController::restoreMasterChannel() {
@@ -205,6 +284,9 @@ void AppController::processFrame(const RadioFrame& frame) {
             break;
         case Protocol::MessageType::PairAccept:
             handlePairAccept(sender, header.seq, frame.data[Protocol::kPairAcceptChannelOffset]);
+            break;
+        case Protocol::MessageType::AlertAck:
+            handleAlertAck(sender, header.seq);
             break;
         default:
             break;  // PairRequest, PairConfirm and Alert are never addressed to a belt

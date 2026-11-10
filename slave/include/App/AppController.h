@@ -24,8 +24,9 @@
 //   3. on PairAccept (caregiver pressed Save) save the master's MAC and channel,
 //      then answer PairConfirm. Nothing is saved before that PairAccept.
 //
-// Alert: one click on the alert button sends an Alert to the paired master. Without
-// a paired master the click is ignored.
+// Alert: one click on the alert button sends an Alert to the paired master, resent
+// with the same seq until its AlertAck arrives (or every retry is used). Without a
+// paired master the click is ignored.
 //
 // Fall: the BMI270 fills its FIFO at 50 Hz. While idle only INT1 (any-motion) is
 // watched; on movement the FIFO is read every kImuReadIntervalMs and handed to the
@@ -35,7 +36,12 @@
 //
 // Feedback: the StateHandler shows the pairing/fall state on the LED, buzzer and
 // vibration motor; this class only reports snapshot() each loop and notify()s the
-// transitions (paired, timed out, alert sent/rejected, fall cancelled, boot fault).
+// transitions (paired, timed out, alert sent/rejected/failed, fall cancelled, boot fault).
+//
+// Power: when nothing is happening (StateHandler idle, no pairing, no alert waiting
+// for its ack, buttons released) the ESP goes into light sleep, as in
+// prototypes/bmi270_fall_detect.cpp: until any-motion when still, until the next
+// FIFO read when moving. Either button also wakes it.
 class AppController {
 public:
     AppController();
@@ -53,6 +59,9 @@ private:
     void sendMessage(const String& mac, Protocol::MessageType type, uint16_t seq);
     void restoreMasterChannel();
     void processImu();
+    void resendAlert();
+    void handleAlertAck(const String& sender, uint16_t seq);
+    void maybeSleep();
     SystemSnapshot snapshot() const;
 
     MasterLinkStorage masterLinkStorage;
@@ -72,6 +81,11 @@ private:
     bool imuActive = false;        // moving: the FIFO is being read
     uint32_t lastImuReadMs = 0;    // last FIFO read
     uint32_t lastMotionMs = 0;     // last any-motion seen
+
+    bool alertPending = false;     // Alert sent, no AlertAck yet
+    uint16_t alertSeq = 0;         // seq of the pending Alert (resends reuse it)
+    uint8_t alertAttempts = 0;
+    uint32_t lastAlertSendMs = 0;
 
     String lockedMaster;         // master that answered PairWait in this attempt
     uint32_t lastRequestMs = 0;    // last PairRequest sent while waiting

@@ -34,6 +34,15 @@ constexpr uint32_t kImuReadIntervalMs = 1000;
 // ending up to 2 s after the impact still have to be checked.
 constexpr uint32_t kImuIdleAfterStillMs = 5000;
 
+// Alert: resent with the same seq until the master's AlertAck (10 x 500 ms = 5 s)
+constexpr uint32_t kAlertRetryIntervalMs = 500;
+constexpr uint8_t kAlertMaxAttempts = 10;
+
+// Power. Light sleep whenever nothing is happening; woken by the IMU (any-motion on
+// INT1 when still, a timer for the next FIFO read when moving) and by both buttons.
+// Set to false while debugging over USB: the S3 USB serial drops during light sleep.
+constexpr bool kUseLightSleep = true;
+
 // Fall
 constexpr uint32_t kFallCancelWindowMs = 10000;  // time to cancel a detected fall before the alert goes out
 
