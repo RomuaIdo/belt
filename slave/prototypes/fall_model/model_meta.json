@@ -1,0 +1,13 @@
+{
+  "threshold": 0.5,
+  "acc_scale": 0.5,
+  "gyr_scale": 0.005,
+  "shapes": {"f.0.weight": [8, 4, 5], "f.0.bias": [8], "f.3.weight": [16, 8, 5], "f.3.bias": [16],
+             "f.6.weight": [16, 16, 5], "f.6.bias": [16], "out.weight": [1, 16], "out.bias": [1]},
+  "gold": [
+    {"name": "F01_SA03_R01", "end": 609, "peak": 7.788026332855225, "tilt": 87.58291625976562, "passes": true, "prob": 0.999990701675415},
+    {"name": "F05_SA03_R01", "end": 376, "peak": 7.662729740142822, "tilt": 86.533203125, "passes": true, "prob": 1.0},
+    {"name": "D19_SA03_R05", "end": 203, "peak": 6.043422698974609, "tilt": 41.845733642578125, "passes": true, "prob": 0.9955340623855591},
+    {"name": "D13_SA23_R04", "end": 129, "peak": 1.7250226736068726, "tilt": 86.37850189208984, "passes": true, "prob": 0.003807990811765194}
+  ]
+}
