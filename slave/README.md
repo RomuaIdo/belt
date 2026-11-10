@@ -19,11 +19,11 @@ motor.
 | `include/Input/` and `src/Input/` | `Button`: debounced button with press edge detection |
 | `include/Sensor/` and `src/Sensor/` | `Bmi270`: IMU driver over SPI (FIFO and any-motion) |
 | `include/Domain/` | `MasterLink` (paired master MAC and channel) |
-| [prototypes/](prototypes/) | Standalone sketches and the training of the fall model ([`prototypes/fall_model/README.md`](prototypes/fall_model/README.md)) |
 | `include/Storage/` and `src/Storage/` | `MasterLinkStorage`: persists the paired master in LittleFS |
 | `include/Util/` | `AppConfig.h`: pins, timings, and constants |
 | `src/main.cpp` | Firmware entry point: `setup()` and `loop()` |
 | [test/](test/) | Unity test suites, organized by component |
+| [prototypes/](prototypes/) | Standalone sketches and the training of the fall model ([`prototypes/fall_model/README.md`](prototypes/fall_model/README.md)) |
 
 The wire protocol shared with the master is in [`../shared/include/Protocol/Message.h`](../shared/include/Protocol/Message.h).
 
@@ -117,8 +117,8 @@ nothing and `isIdle()` returns true, so the belt can go to sleep.
 | `FallCancelled` | One 400 ms green LED pulse |
 | `BootFault` | LED blinks red three times (radio or IMU failed to start) |
 
-State priority is fall countdown, then alert, then pairing, then idle. Every transition is logged on the serial
-monitor, for example `StateHandler: Idle -> PairingSearching`.
+State priority is fall countdown, then alert, then pairing, then idle. Every transition is
+logged on the serial monitor, for example `StateHandler: Idle -> PairingSearching`.
 
 To change what an output does, edit the tables in
 [`include/State/Feedback.h`](include/State/Feedback.h). `PatternPlayer` only computes the
@@ -195,3 +195,19 @@ flipping `board_build.flash_mode` between `qio` and `dio` in `platformio.ini`.
 
 The test environment selects `Domain/`, `Storage/`, `Pairing/`, `Input/`, `Sensor/`,
 `State/`, and `Fall/`, without compiling `src/main.cpp`, `App/`, or `Network/`.
+
+### Prototypes
+
+Each prototype has its own environment that builds only that file, none of `src/`:
+
+```sh
+# BMI270 fall detection with light sleep (the flow the firmware is based on)
+pio run -e proto-bmi270-fall -t upload -t monitor
+
+# MPU-6050 FIFO alignment test (kept to document why the MPU-6050 was replaced)
+pio run -e proto-mpu-fifo -t upload -t monitor
+```
+
+The model is trained in Python from SisFall; `prototypes/fall_model/export_model.py`
+regenerates `include/Fall/FallModelWeights.h` and the golden windows used by
+`test_fall_pipeline`.
