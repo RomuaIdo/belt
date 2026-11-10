@@ -46,6 +46,9 @@ save power (BMI270: 685 uA accel+gyro vs tens of uA accel-only low power).
 - `train_fall_model.py`: SisFall download, simulation, training, threshold,
   writes `fall_model_weights.b64` + `model_meta.json` (weights, threshold and
   golden windows: name, window end, expected heuristic values and probability).
+- `simulate_schedule.py <path>/SisFall_dataset .`: old vs new wake schedule
+  (any-motion + 1 s awake vs timer reads while active, idle after 3/5/10 s):
+  same detection (100% / 1.4%), ESP awake ~1.4% instead of ~52% while moving.
 - `export_model.py <path>/SisFall_dataset`: checks the weights reproduce the
   golden probabilities, then generates `../fall_model_weights.h` and
   `../../test/test_fall_pipeline/golden.h`.

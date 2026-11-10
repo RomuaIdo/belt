@@ -3,10 +3,13 @@
 // Flow:
 //   1. BMI270 samples accel + gyro at 50 Hz into its 2 KB FIFO (headerless,
 //      12 B/frame -> ~170 frames = ~3.4 s; oldest frames are dropped when full).
-//   2. The ESP sits in light sleep. The any-motion feature raises INT1
-//      (latched) and the GPIO wakes the ESP.
-//   3. The ESP waits kPostTriggerMs so the windows also cover what happens
-//      after the trigger, then reads the FIFO and appends it to a history.
+//   2. Idle: the ESP sits in light sleep until any-motion raises INT1
+//      (latched) and the GPIO wakes it. It reads the FIFO at once (the frames
+//      before the movement are already there) and switches to active.
+//   3. Active: light sleep on a timer, waking every kActiveReadIntervalMs to
+//      read the FIFO and append it to a history. The ESP is awake only for
+//      the read and the checks (~15 ms), not while the FIFO fills. After
+//      kIdleAfterStillMs without any-motion it goes back to idle.
 //   4. Every 2 s window (100 frames) ending in the frames just read is checked
 //      by a cheap heuristic, stepping kWindowStrideFrames. The passing window
 //      with the strongest impact goes to a small CNN that confirms the fall.
@@ -52,7 +55,14 @@ constexpr uint8_t kImuInt1Pin = 7;
 constexpr uint32_t kSpiHz = 4000000;  // BMI270 allows 10 MHz; 4 MHz is safe on jumper wires
 
 constexpr bool kUseLightSleep = true;
-constexpr bool kDumpWindowCsv = true;  // print the 2 s window as CSV (training data)
+// Debug: onboard WS2812 shows the mode, since the USB serial drops in light
+// sleep and the log can be lost. The LED keeps its color while the ESP sleeps.
+// Off = idle, blue = active (reading every second), red = a fall was confirmed
+// (stays until reset). Costs ~1 mA while lit: turn off to measure power.
+constexpr bool kStatusLed = true;
+constexpr uint8_t kStatusLedPin = 48;
+constexpr uint8_t kLedLevel = 16;
+constexpr bool kDumpWindowCsv = true;  // print candidate windows as CSV (model training data)
 
 constexpr uint32_t kSampleHz = fall::kSampleHz;
 constexpr size_t kWindowFrames = fall::kWindowFrames;  // 2 s
@@ -62,7 +72,13 @@ constexpr size_t kFifoMaxFrames = kFifoBytes / kFrameBytes;
 // A full FIFO read back 168 frames on the board: it counts as full two frames
 // before the 2048 B end (datasheet 4.7.5) and then drops the oldest frames.
 constexpr size_t kFifoFullFrames = kFifoMaxFrames - 4;
-constexpr uint32_t kPostTriggerMs = 1000;  // window = ~1 s before + ~1 s after the trigger
+// Active mode. On SisFall (simulated, test subjects) this keeps 100% of falls and
+// 1.4% of ADL recordings, as the old "stay awake 1 s after any-motion" scheme
+// did, while the ESP is awake ~1.4% of the time during movement instead of ~52%.
+constexpr uint32_t kActiveReadIntervalMs = 1000;  // FIFO holds ~3.4 s, so no frame is lost
+// Must exceed the 2 s window: after a fall the person lies still, and the
+// windows ending up to 2 s after the impact still have to be checked.
+constexpr uint32_t kIdleAfterStillMs = 5000;
 
 // any-motion: duration in 20 ms steps, threshold in 0.49 mg steps (max 2047 ~ 1 g).
 constexpr uint16_t kAnyMotionDuration = 1;     // 20 ms
@@ -180,9 +196,15 @@ uint16_t readFifo() {
     spiRead(kRegFifoLength0, lenBuf, sizeof(lenBuf));
     const size_t len = min(static_cast<size_t>((lenBuf[0] | (lenBuf[1] << 8)) & 0x3FFF), kFifoBytes);
     spiRead(kRegFifoData, fifoRaw, len);
+    // Should not happen on the BMI270 (whole frames are dropped on overflow,
+    // checked at boot), but a misaligned read would turn every frame into
+    // garbage: drop it and start over instead of feeding the model.
     if (len % kFrameBytes != 0) {
-        Serial.printf("  FIFO length %u is not a multiple of %u\n", static_cast<unsigned>(len),
+        Serial.printf("  FIFO length %u is not a multiple of %u: flushing\n", static_cast<unsigned>(len),
                       static_cast<unsigned>(kFrameBytes));
+        imu.flushFIFO();
+        historyCount = 0;
+        return 0;
     }
 
     // Headerless frame with accel + gyro: GYR x,y,z then ACC x,y,z, little endian.
@@ -249,22 +271,24 @@ void trimHistory(size_t total) {
     historyCount = keep;
 }
 
+bool fallSeen = false;
+
+void statusLed(uint8_t r, uint8_t g, uint8_t b) {
+    if (kStatusLed && !fallSeen) neopixelWrite(kStatusLedPin, r, g, b);
+}
+
 void printFeatures(const fall::Features& f) {
     Serial.printf("  peak %.2f g @%u (%.2f s) | tilt %.0f deg | min before %.2f g | gyro near impact %.0f dps\n",
                   f.peakG, static_cast<unsigned>(f.peakIdx), f.peakIdx / static_cast<float>(kSampleHz),
                   f.tiltChangeDeg, f.minGBeforePeak, f.peakDpsNearImpact);
 }
 
-void handleTrigger(uint16_t intStatus) {
-    const uint32_t t0 = millis();
-    Serial.printf("\n[%lu ms] wake: INT status 0x%04X%s\n", static_cast<unsigned long>(t0), intStatus,
-                  (intStatus & BMI270_ANY_MOT_STATUS_MASK) ? " ANY_MOTION" : "");
-
-    delay(kPostTriggerMs);  // let the FIFO record the after-impact part
+// Reads the FIFO and checks every window ending in the new frames.
+void processFifo() {
     size_t firstNew = 0;
     const size_t total = appendToHistory(readFifo(), firstNew);
     if (total < kWindowFrames) {
-        Serial.printf("  only %u frames so far (need %u), skipping\n", static_cast<unsigned>(total),
+        Serial.printf("  %u frames so far (need %u), skipping\n", static_cast<unsigned>(total),
                       static_cast<unsigned>(kWindowFrames));
         trimHistory(total);
         return;
@@ -285,7 +309,8 @@ void handleTrigger(uint16_t intStatus) {
         checked++;
         if (end < lastEnd + kWindowStrideFrames) break;  // size_t: do not wrap below lastEnd
     }
-    Serial.printf("  %u windows checked\n", static_cast<unsigned>(checked));
+    Serial.printf("  %u new frames, %u windows checked\n", static_cast<unsigned>(total - firstNew),
+                  static_cast<unsigned>(checked));
 
     const bool candidate = bestEnd != 0;
     const fall::ImuFrame* window = history + ((candidate ? bestEnd : total) - kWindowFrames);
@@ -296,6 +321,8 @@ void handleTrigger(uint16_t intStatus) {
         const uint32_t modelUs = micros() - m0;
         if (fall::modelConfirmsFall(p)) {
             Serial.printf("  -> FALL CONFIRMED by the model (p=%.3f, %lu us)\n", p, static_cast<unsigned long>(modelUs));
+            if (kStatusLed) neopixelWrite(kStatusLedPin, kLedLevel, 0, 0);
+            fallSeen = true;
             // TODO: raise the alert (ESP-NOW Alert to the master) once integrated.
         } else {
             Serial.printf("  -> candidate rejected by the model (p=%.3f, %lu us)\n", p,
@@ -304,12 +331,14 @@ void handleTrigger(uint16_t intStatus) {
     } else {
         Serial.println("  -> not a fall (heuristic)");
     }
-    if (kDumpWindowCsv) dumpWindowCsv(window, kWindowFrames);
+    // Only candidates: the model never sees the other windows.
+    if (kDumpWindowCsv && candidate) dumpWindowCsv(window, kWindowFrames);
     trimHistory(total);
-    Serial.printf("  handled in %lu ms\n", static_cast<unsigned long>(millis() - t0));
 }
 
-void sleepUntilImuInt() {
+// Idle: light sleep until any-motion raises INT1.
+void sleepUntilMotion() {
+    clearImuInterrupt();  // the latch must be low or the level wake fires at once
     Serial.flush();
     if (kUseLightSleep) {
         gpio_wakeup_enable(static_cast<gpio_num_t>(kImuInt1Pin), GPIO_INTR_HIGH_LEVEL);
@@ -318,10 +347,30 @@ void sleepUntilImuInt() {
         // Back to no interrupt type: left at HIGH_LEVEL, the latched INT1 would
         // keep firing the GPIO interrupt and trip the interrupt watchdog.
         gpio_wakeup_disable(static_cast<gpio_num_t>(kImuInt1Pin));
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
     } else {
         while (!imuIntFired) delay(5);
     }
 }
+
+// Active: light sleep on a timer only. INT1 stays latched while the person
+// moves, so GPIO wake is off here; the any-motion status is read on each wake.
+void sleepFor(uint32_t ms) {
+    if (ms == 0) return;  // the last read took the whole interval
+    Serial.flush();
+    if (kUseLightSleep) {
+        esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(ms) * 1000);
+        esp_light_sleep_start();
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    } else {
+        delay(ms);
+    }
+}
+
+enum class Mode { Idle, Active };
+Mode mode = Mode::Idle;
+uint32_t lastMotionMs = 0;
+uint32_t lastReadMs = 0;
 
 }  // namespace
 
@@ -344,11 +393,33 @@ void setup() {
     Serial.println("BMI270 ready (SPI, 50 Hz, +-16 g, +-2000 dps, FIFO accel+gyro)");
 
     checkFifoOverflowAlignment();
-    Serial.printf("Sleeping (%s) until any-motion...\n", kUseLightSleep ? "light sleep" : "busy wait");
+    statusLed(0, 0, 0);
+    Serial.printf("Idle (%s) until any-motion...\n", kUseLightSleep ? "light sleep" : "busy wait");
 }
 
 void loop() {
-    clearImuInterrupt();  // the latch must be low or the level wake fires at once
-    sleepUntilImuInt();
-    handleTrigger(clearImuInterrupt());
+    if (mode == Mode::Idle) {
+        sleepUntilMotion();
+        mode = Mode::Active;
+        statusLed(0, 0, kLedLevel);
+        Serial.printf("\n[%lu ms] any-motion: active, reading every %lu ms\n", static_cast<unsigned long>(millis()),
+                      static_cast<unsigned long>(kActiveReadIntervalMs));
+    } else {
+        // Keep a steady cadence: subtract the time spent on the last read.
+        const uint32_t busy = millis() - lastReadMs;
+        sleepFor(busy < kActiveReadIntervalMs ? kActiveReadIntervalMs - busy : 0);
+    }
+
+    lastReadMs = millis();
+    // Latched any-motion since the last read: the person is still moving.
+    if (clearImuInterrupt() & BMI270_ANY_MOT_STATUS_MASK) lastMotionMs = lastReadMs;
+    Serial.printf("[%lu ms] read\n", static_cast<unsigned long>(lastReadMs));
+    processFifo();
+    Serial.printf("  awake for %lu ms\n", static_cast<unsigned long>(millis() - lastReadMs));
+
+    if (millis() - lastMotionMs >= kIdleAfterStillMs) {
+        mode = Mode::Idle;
+        statusLed(0, 0, 0);
+        Serial.printf("  still for %lu s: idle until any-motion\n", static_cast<unsigned long>(kIdleAfterStillMs / 1000));
+    }
 }
