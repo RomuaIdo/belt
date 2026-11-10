@@ -13,7 +13,7 @@
 //   4. Every 2 s window (100 frames) ending in the frames just read is checked
 //      by a cheap heuristic, stepping kWindowStrideFrames. The passing window
 //      with the strongest impact goes to a small CNN that confirms the fall.
-//   Heuristic, model and their SisFall results: fall_pipeline.h and
+//   Heuristic, model and their SisFall results: include/Fall/FallPipeline.h and
 //   fall_model/README.md.
 //
 // Why the heuristic: any-motion fires when the accel moves more than a
@@ -42,7 +42,7 @@
 #include <esp_sleep.h>
 
 #include "SparkFun_BMI270_Arduino_Library.h"
-#include "fall_pipeline.h"
+#include "Fall/FallPipeline.h"
 
 namespace {
 

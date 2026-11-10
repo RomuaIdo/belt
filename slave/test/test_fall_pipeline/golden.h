@@ -4,7 +4,7 @@
 // SisFall candidate windows (test subjects) with the values the trained model and the
 // Python heuristic gave on them. Frames: ax, ay, az [g], gx, gy, gz [dps] at 50 Hz.
 
-#include "../../prototypes/fall_pipeline.h"
+#include "Fall/FallPipeline.h"
 
 struct GoldenWindow {
     const char* name;

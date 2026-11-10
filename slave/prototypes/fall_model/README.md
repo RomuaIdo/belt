@@ -1,7 +1,7 @@
 # Fall-confirmation model
 
 Small 1D CNN that confirms the fall candidates found by the heuristic gate in
-`../fall_pipeline.h`. Both run on the ESP32-S3 inside
+`../../include/Fall/FallPipeline.h`. Both run on the ESP32-S3 inside
 `../bmi270_fall_detect.cpp`: any-motion wakes the ESP, every 2 s window in the
 new FIFO data goes through the heuristic, and the passing window with the
 strongest impact goes to the model.
@@ -14,7 +14,7 @@ strongest impact goes to the model.
   |a|, a along the gravity at the start of the window, a across it, |gyro|.
 - `conv(4->8,k5) relu pool2 -> conv(8->16,k5) relu pool2 -> conv(16->16,k5) relu -> mean -> dense(16->1) -> sigmoid`
 - 2137 float weights (~8.5 KB flash), ~67k multiply-adds, ~11.6 KB static RAM
-  for activations. Plain C++ in `fall_pipeline.h`, no ML library.
+  for activations. Plain C++ in `include/Fall/FallPipeline.h`, no ML library.
 - Fall when probability >= 0.5 (chosen on the validation subjects).
 
 ## Data and results
@@ -50,7 +50,7 @@ save power (BMI270: 685 uA accel+gyro vs tens of uA accel-only low power).
   (any-motion + 1 s awake vs timer reads while active, idle after 3/5/10 s):
   same detection (100% / 1.4%), ESP awake ~1.4% instead of ~52% while moving.
 - `export_model.py <path>/SisFall_dataset`: checks the weights reproduce the
-  golden probabilities, then generates `../fall_model_weights.h` and
+  golden probabilities, then generates `../../include/Fall/FallModelWeights.h` and
   `../../test/test_fall_pipeline/golden.h`.
 
 ## Retraining

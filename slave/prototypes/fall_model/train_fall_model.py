@@ -33,7 +33,7 @@ for subj in sorted(os.listdir(root)):
         recs.append((f[:-4], m.group(1), m.group(2), x[:n].reshape(-1, 4, 6).mean(1).astype(np.float32)))
 print(len(recs), "recordings;", sum(r[1][0] == 'F' for r in recs), "falls")
 
-# ---- 2. Firmware flow simulation (mirrors bmi270_fall_detect.cpp / fall_pipeline.h) ----
+# ---- 2. Firmware flow simulation (mirrors Fall/FallDetector.cpp / Fall/FallPipeline.h) ----
 HZ, WIN, STRIDE, POST, FIFO_FULL = 50, 100, 5, 50, 168
 ORIENT = HZ // 2
 IMPACT_G, TILT_DEG = 1.6, 40.0

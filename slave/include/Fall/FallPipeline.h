@@ -5,13 +5,13 @@
 // bmi270_fall_detect.cpp and test/test_fall_pipeline.
 //
 // The heuristic and the model were tuned/trained on SisFall through a
-// simulation of the firmware flow, see fall_model/README.md.
+// simulation of the firmware flow, see prototypes/fall_model/README.md.
 
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include "fall_model_weights.h"
+#include "Fall/FallModelWeights.h"
 
 namespace fall {
 

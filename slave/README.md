@@ -3,21 +3,23 @@
 PlatformIO project using Arduino framework for the ESP32-S3 Super Mini
 (ESP32-S3FH4R2: 4 MB flash and 2 MB PSRAM).
 
-The belt pairs with the master, sends an alert to it when the alert button is held,
-and shows what it is doing on its LED, buzzer, and vibration motor.
+The belt pairs with the master, sends an alert to it when the alert button is clicked
+or when it detects a fall, and shows what it is doing on its LED, buzzer, and vibration
+motor.
 
 ## Organization
 
 | Directory | Responsibility |
 |---|---|
-| `include/App/` and `src/App/` | `AppController`, coordinating radio, buttons, pairing, alert, IMU, and feedback |
-| `include/Alert/` and `src/Alert/` | `AlertService`: state machine for holding the alert button |
+| `include/App/` and `src/App/` | `AppController`, coordinating radio, buttons, pairing, alert, IMU, fall detection, and feedback |
+| `include/Fall/` and `src/Fall/` | `FallPipeline.h` (heuristic + CNN, weights in `FallModelWeights.h`), `FallDetector` (FIFO reads to fall decisions), and `FallService` (cancel countdown) |
 | `include/Pairing/` and `src/Pairing/` | `PairingService` (pairing state machine) and `ChannelScanner` (Wi-Fi channel sweep) |
 | `include/State/` and `src/State/` | `StateHandler`: system state and event feedback on the outputs (LED, buzzer, vibration) |
 | `include/Network/` and `src/Network/` | `EspNowTransceiver`: ESP-NOW send/receive and channel selection |
 | `include/Input/` and `src/Input/` | `Button`: debounced button with press edge detection |
-| `include/Sensor/` and `src/Sensor/` | `Mpu6050`: IMU driver over I2C |
-| `include/Domain/` | `MasterLink` (paired master MAC and channel), `ImuSample`, and `SampleBuffer` (circular buffer) |
+| `include/Sensor/` and `src/Sensor/` | `Bmi270`: IMU driver over SPI (FIFO and any-motion) |
+| `include/Domain/` | `MasterLink` (paired master MAC and channel) |
+| [prototypes/](prototypes/) | Standalone sketches and the training of the fall model ([`prototypes/fall_model/README.md`](prototypes/fall_model/README.md)) |
 | `include/Storage/` and `src/Storage/` | `MasterLinkStorage`: persists the paired master in LittleFS |
 | `include/Util/` | `AppConfig.h`: pins, timings, and constants |
 | `src/main.cpp` | Firmware entry point: `setup()` and `loop()` |
@@ -36,10 +38,11 @@ Header-only files (such as `State/Feedback.h`) do not require a `.cpp` file.
 `AppController` (`src/App/AppController.cpp`):
 
 - `setup()` mounts LittleFS, puts Wi-Fi in station mode (the belt never joins a network, it
-  only needs the radio for ESP-NOW), starts ESP-NOW and the MPU-6050, and restores the
+  only needs the radio for ESP-NOW), starts ESP-NOW and the BMI270, and restores the
   paired master and its channel from `/master_link.json`.
-- `loop()` reads the buttons, advances pairing and alert, processes incoming radio frames,
-  reads the IMU, and hands the current state to the `StateHandler`.
+- `loop()` reads the buttons, checks the IMU for falls, advances pairing and the fall
+  countdown, processes incoming radio frames, and hands the current state to the
+  `StateHandler`.
 
 **Pairing** (pairing button, GPIO 4). The belt starts it; only the master knows the
 router's Wi-Fi channel, so the belt looks for it:
@@ -54,16 +57,27 @@ router's Wi-Fi channel, so the belt looks for it:
 
 The whole attempt times out after 5 minutes.
 
-**Alert** (alert button, GPIO 5). Holding the button for 2 s sends one `Alert` to the paired
-master; releasing it re-arms the button. Without a paired master the press is rejected.
-The protocol also defines `AlertAck` and resending, which the belt does not use yet.
+**Alert** (alert button, GPIO 5). One click sends an `Alert` to the paired master. Without
+a paired master the click is rejected. During a fall countdown the click cancels the fall
+instead. The protocol also defines `AlertAck` and resending, which the belt does not use yet.
 
-**IMU.** The MPU-6050 (I2C: SDA GPIO 8, SCL GPIO 9) is read at 100 Hz into a circular buffer
-holding the last 3 s. The latest sample is printed on the serial monitor. There is no
-fall detection yet.
+**Fall detection.** The BMI270 (SPI) samples accel and gyro at 50 Hz into its FIFO, which
+holds the last ~3.4 s.
 
-Not implemented yet: deep sleep (waking up by button or IMU interrupt), `AlertAck`
-handling, and fall detection.
+1. While still, the belt only watches INT1: the BMI270's any-motion (~0.25 g), latched.
+2. On movement it reads the FIFO at once (the frames before the movement are already
+   there), then every 1 s. After 5 s without movement it goes back to watching INT1.
+3. Every 2 s window ending in the new frames goes through a cheap heuristic (impact
+   >= 1.6 g and the body ending >= 40 degrees from where it started). The passing window
+   with the strongest impact goes to a small CNN that confirms the fall. Model, training,
+   and SisFall results: [`prototypes/fall_model/README.md`](prototypes/fall_model/README.md).
+4. A confirmed fall starts `FallCountdown` (10 s): LED, buzzer, and vibration go off so the
+   wearer notices. A click on the alert button cancels it (false positive). Otherwise the
+   `Alert` goes to the master when the countdown ends.
+
+Not implemented yet: sleep (the prototype in `prototypes/bmi270_fall_detect.cpp` uses
+light sleep, which still has to be reconciled with ESP-NOW and the buttons), and
+`AlertAck` handling with resend.
 
 ## State feedback
 
@@ -80,18 +94,18 @@ nothing and `isIdle()` returns true, so the belt can go to sleep.
 | `Idle` | Everything off |
 | `PairingSearching` | LED blinks blue, 150 ms on / 150 ms off |
 | `PairingWaiting` | LED blinks blue, 500 ms on / 500 ms off |
-| `AlertHolding` | LED steady red |
-| `AlertSending` | LED blinks red, 100 ms on / 100 ms off |
+| `FallCountdown` | LED blinks red 200/200 ms, buzzer beeps 200 ms every 1 s, motor vibrates 500/500 ms |
 
 | Event | Behavior (placeholder values) |
 |---|---|
 | `PairingSucceeded` | Two quick beeps and a 400 ms green LED pulse |
 | `PairingTimedOut` | One 500 ms beep |
-| `AlertSent` | One 400 ms vibration |
+| `AlertSent` | One 400 ms vibration and red LED pulse |
 | `AlertRejected` | Two short vibrations |
+| `FallCancelled` | One 400 ms green LED pulse |
 | `BootFault` | LED blinks red three times (radio or IMU failed to start) |
 
-State priority is alert, then pairing, then idle. Every transition is logged on the serial
+State priority is fall countdown, then pairing, then idle. Every transition is logged on the serial
 monitor, for example `StateHandler: Idle -> PairingSearching`.
 
 To change what an output does, edit the tables in
@@ -106,13 +120,14 @@ Defined in `include/Util/AppConfig.h`.
 |---|---|
 | Pairing button (to GND, internal pull-up) | GPIO 4 |
 | Alert button (to GND, internal pull-up) | GPIO 5 |
-| MPU-6050 SDA / SCL | GPIO 8 / GPIO 9 |
+| BMI270 CS / MOSI (SDA) / SCK (SCL) / MISO (SDO) | GPIO 10 / 11 / 12 / 13 |
+| BMI270 INT1 | GPIO 7 |
 | Status LED (onboard WS2812 RGB) | GPIO 48 |
-| Buzzer | not set (`kNoPin`) |
-| Vibration motor | not set (`kNoPin`) |
+| Buzzer | GPIO 6 |
+| Vibration motor | GPIO 8 |
 
-An output set to `kNoPin` is skipped, so only the LED gives feedback until the buzzer and
-motor pins are defined. The buzzer plays at `kBuzzerFreqHz` (2700 Hz).
+An output set to `kNoPin` is skipped. The buzzer plays at `kBuzzerFreqHz` (2700 Hz). The
+BMI270 starts in I2C mode and switches to SPI on the first CS rising edge.
 
 ## Pairing the belt
 
@@ -122,7 +137,7 @@ motor pins are defined. The buzzer plays at `kBuzzerFreqHz` (2700 Hz).
 4. When the master answers, the LED blinks slower. On the master's page, select the belt,
    fill in the form, and press Save.
 5. The belt gives two beeps and a green LED pulse, and the pairing is saved.
-6. Hold the alert button for 2 s to send an alert to the master.
+6. Click the alert button to send an alert to the master.
 
 The pairing survives reboots: it is stored in `/master_link.json` on LittleFS.
 
@@ -152,20 +167,19 @@ Available test suites:
 |---|---|
 | `test_pattern_player` | Blink timing, repeats, and clock rollover |
 | `test_state_handler` | State priority, events over states, and `isIdle()` (no pins used) |
-| `test_alert_service` | Alert hold, single send per hold, release, and abort |
+| `test_fall_pipeline` | Heuristic and CNN against the Python results on SisFall windows |
+| `test_fall_detector` | Windows across FIFO reads, lost frames, one report per fall |
+| `test_fall_service` | Fall countdown, cancel, single send |
 | `test_pairing_service` | Pairing state machine and timeout |
 | `test_channel_scanner` | Channel sweep |
 | `test_button` | Debounce and press edge |
 | `test_master_link_storage` | Paired master persistence (writes to flash) |
 | `test_protocol` | Frame building and parsing |
-| `test_sample_buffer` | IMU circular buffer |
 | `test_board_specs` | Reports the board's flash and PSRAM |
-| `test_i2c_scan` | Scans the I2C bus (needs the MPU-6050 wired) |
-| `test_mpu6050` | Reads the MPU-6050 (needs the sensor wired) |
 
 The board's flash and PSRAM settings have not been verified on real hardware: run
 `test_board_specs` first and read its serial output. If boot is garbled or loops, try
 flipping `board_build.flash_mode` between `qio` and `dio` in `platformio.ini`.
 
 The test environment selects `Domain/`, `Storage/`, `Pairing/`, `Input/`, `Sensor/`,
-`State/`, and `Alert/`, without compiling `src/main.cpp`, `App/`, or `Network/`.
+`State/`, and `Fall/`, without compiling `src/main.cpp`, `App/`, or `Network/`.

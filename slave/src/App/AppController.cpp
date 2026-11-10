@@ -2,18 +2,22 @@
 #include "Util/AppConfig.h"
 #include "Util/MacUtils.h"
 #include <LittleFS.h>
+#include <SPI.h>
 #include <WiFi.h>
+
+static_assert(Bmi270::kFifoMaxFrames <= FallDetector::kMaxFramesPerRead,
+              "FallDetector must hold a whole FIFO read");
 
 AppController::AppController()
     : masterLinkStorage(AppConfig::kMasterLinkFilePath),
       pairingButton(AppConfig::kButtonDebounceMs, /*activeLow=*/true),
       alertButton(AppConfig::kButtonDebounceMs, /*activeLow=*/true),
       pairingService(AppConfig::kPairingTimeoutMs, []() { return millis(); }),
-      alertService(AppConfig::kAlertHoldMs, []() { return millis(); }),
+      fallService(AppConfig::kFallCancelWindowMs, []() { return millis(); }),
       stateHandler(AppConfig::kStatusLedPin, AppConfig::kBuzzerPin, AppConfig::kVibrationPin),
       channelScanner(AppConfig::kPairingMinChannel, AppConfig::kPairingMaxChannel,
                      AppConfig::kPairingChannelDwellMs, []() { return millis(); }),
-      mpu(Wire) {}
+      imu(AppConfig::kImuSpiCsPin, AppConfig::kImuSpiHz) {}
 
 void AppController::setup() {
     Serial.begin(115200);
@@ -36,10 +40,12 @@ void AppController::setup() {
         Serial.println("AppController: ESP-NOW init failed");
     }
 
-    Wire.begin(AppConfig::kImuSdaPin, AppConfig::kImuSclPin, AppConfig::kImuI2cHz);
-    mpuReady = mpu.begin();
-    if (!mpuReady) {
-        Serial.println("AppController: MPU-6050 init failed");
+    SPI.begin(AppConfig::kImuSpiSckPin, AppConfig::kImuSpiMisoPin, AppConfig::kImuSpiMosiPin,
+              AppConfig::kImuSpiCsPin);
+    pinMode(AppConfig::kImuIntPin, INPUT_PULLDOWN);
+    imuReady = imu.begin();
+    if (!imuReady) {
+        Serial.println("AppController: BMI270 init failed");
     }
 
     masterLink = masterLinkStorage.load();
@@ -49,7 +55,7 @@ void AppController::setup() {
         restoreMasterChannel();
     }
 
-    if (!radioReady || !mpuReady) stateHandler.notify(SystemEvent::BootFault, millis());
+    if (!radioReady || !imuReady) stateHandler.notify(SystemEvent::BootFault, millis());
 
     Serial.println("AppController: setup complete");
 }
@@ -62,13 +68,18 @@ void AppController::loop() {
         startPairing();
     }
 
-    const uint32_t buttonNow = millis();
-    if (alertButton.update(digitalRead(AppConfig::kAlertButtonPin), buttonNow)) {
-        Serial.println("AppController: Alert button pressed, looking for the master...");
-        alertService.onPress();
+    if (alertButton.update(digitalRead(AppConfig::kAlertButtonPin), millis())) {
+        if (fallService.cancel()) {
+            Serial.println("AppController: fall cancelled by the wearer, no alert sent");
+            stateHandler.notify(SystemEvent::FallCancelled, millis());
+        } else {
+            Serial.println("AppController: alert button pressed");
+            sendAlert();
+        }
     }
-    if (alertService.update(alertButton.isPressed())) {
-        sendAlert();  // once per hold
+    if (fallService.update()) {
+        Serial.println("AppController: fall not cancelled in time");
+        sendAlert();
     }
 
     if (pairingService.isSearching() && channelScanner.tick()) {
@@ -104,27 +115,41 @@ void AppController::loop() {
 }
 
 SystemSnapshot AppController::snapshot() const {
-    return {pairingService.getState(), alertService.getState()};
+    return {pairingService.getState(), fallService.getState()};
 }
 
 void AppController::processImu() {
-    if (!mpuReady) return;
+    if (!imuReady) return;
 
     const uint32_t now = millis();
-    if (now - lastImuReadMs < AppConfig::kImuSampleIntervalMs) return;
+    if (!imuActive) {
+        // Still: only any-motion (latched on INT1) matters. The FIFO keeps the last
+        // ~3.4 s, so the frames before the movement are read right away.
+        if (digitalRead(AppConfig::kImuIntPin) != HIGH) return;
+        imuActive = true;
+        lastMotionMs = now;
+        lastImuReadMs = now - AppConfig::kImuReadIntervalMs;
+        Serial.println("AppController: movement, checking for falls");
+    }
+    if (now - lastImuReadMs < AppConfig::kImuReadIntervalMs) return;
     lastImuReadMs = now;
 
-    ImuSample sample;
-    if (mpu.readSample(sample)) imuBuffer.push(sample);
+    if (imu.takeMotion()) lastMotionMs = now;  // still moving since the last read
 
-    if (imuBuffer.size() > 0 && now - lastImuPrintMs >= AppConfig::kImuDebugPrintMs) {
-        lastImuPrintMs = now;
-        const ImuSample& s = imuBuffer.latest();
-        // "\r" and fixed-width fields: each print overwrites the previous one in place.
-        Serial.printf("\rAppController: IMU a=[%6.2f %6.2f %6.2f] g g=[%7.1f %7.1f %7.1f] dps buf=%3u | ",
-                      Mpu6050::toG(s.ax), Mpu6050::toG(s.ay), Mpu6050::toG(s.az),
-                      Mpu6050::toDps(s.gx), Mpu6050::toDps(s.gy), Mpu6050::toDps(s.gz),
-                      static_cast<unsigned>(imuBuffer.size()));
+    bool lostFrames = false;
+    const size_t n = imu.readFifo(imuFrames, lostFrames);
+    const FallDetector::Result result = fallDetector.process(imuFrames, n, lostFrames);
+    if (result.candidate) {
+        const fall::Features& f = result.features;
+        Serial.printf("AppController: fall candidate (peak %.2f g, tilt %.0f deg) -> model p=%.3f, %s\n", f.peakG,
+                      f.tiltChangeDeg, result.probability, result.fall ? "FALL" : "rejected");
+    }
+    if (result.fall) fallService.onFallDetected();
+
+    if (now - lastMotionMs >= AppConfig::kImuIdleAfterStillMs) {
+        imuActive = false;
+        fallDetector.reset();  // the next movement starts from a fresh FIFO read
+        Serial.println("AppController: still, waiting for movement");
     }
 }
 
@@ -139,11 +164,10 @@ void AppController::startPairing() {
 void AppController::sendAlert() {
     if (!masterLink.hasMac()) {
         Serial.println("AppController: alert ignored, no master configured");
-        alertService.abort();
         stateHandler.notify(SystemEvent::AlertRejected, millis());
         return;
     }
-    Serial.println("AppController: alert button held, sending alert to the master");
+    Serial.println("AppController: sending alert to the master");
     sendMessage(masterLink.getMacAddress(), Protocol::MessageType::Alert, nextSeq++);
     stateHandler.notify(SystemEvent::AlertSent, millis());
 }

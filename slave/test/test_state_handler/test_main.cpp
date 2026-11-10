@@ -9,7 +9,7 @@
 
 namespace {
 using Pairing = PairingService::State;
-using Alert = AlertService::State;
+using Fall = FallService::State;
 
 int asInt(SystemState state) { return static_cast<int>(state); }
 
@@ -19,10 +19,10 @@ StateHandler makeHandler() {
     return handler;
 }
 
-SystemSnapshot snap(Pairing pairing, Alert alert = Alert::Idle) {
+SystemSnapshot snap(Pairing pairing, Fall fall = Fall::Idle) {
     SystemSnapshot snapshot;
     snapshot.pairing = pairing;
-    snapshot.alert = alert;
+    snapshot.fall = fall;
     return snapshot;
 }
 }  // namespace
@@ -33,10 +33,9 @@ void test_resolve_state_priority() {
     TEST_ASSERT_EQUAL(asInt(SystemState::Idle), asInt(resolveState(snap(Pairing::TimedOut))));
     TEST_ASSERT_EQUAL(asInt(SystemState::PairingSearching), asInt(resolveState(snap(Pairing::Searching))));
     TEST_ASSERT_EQUAL(asInt(SystemState::PairingWaiting), asInt(resolveState(snap(Pairing::Waiting))));
-    TEST_ASSERT_EQUAL(asInt(SystemState::AlertHolding),
-                      asInt(resolveState(snap(Pairing::Searching, Alert::Holding))));
-    TEST_ASSERT_EQUAL(asInt(SystemState::AlertSending),
-                      asInt(resolveState(snap(Pairing::Waiting, Alert::Sending))));
+    TEST_ASSERT_EQUAL(asInt(SystemState::FallCountdown), asInt(resolveState(snap(Pairing::Idle, Fall::Countdown))));
+    TEST_ASSERT_EQUAL(asInt(SystemState::FallCountdown),
+                      asInt(resolveState(snap(Pairing::Searching, Fall::Countdown))));
 }
 
 void test_idle_does_nothing() {
@@ -70,16 +69,45 @@ void test_pairing_blinks_the_led_until_it_ends() {
     TEST_ASSERT_TRUE(handler.isIdle(2000));
 }
 
-void test_alert_overrides_pairing_and_pairing_resumes() {
+void test_fall_overrides_pairing_and_pairing_resumes() {
     StateHandler handler = makeHandler();
 
     handler.update(snap(Pairing::Waiting), 0);
-    handler.update(snap(Pairing::Waiting, Alert::Holding), 100);
-    TEST_ASSERT_EQUAL(asInt(SystemState::AlertHolding), asInt(handler.state()));
-    TEST_ASSERT_TRUE(handler.ledIsOn());  // Holding is a steady LED
+    handler.update(snap(Pairing::Waiting, Fall::Countdown), 100);
+    TEST_ASSERT_EQUAL(asInt(SystemState::FallCountdown), asInt(handler.state()));
+    TEST_ASSERT_TRUE(handler.ledIsOn());        // every output starts on
+    TEST_ASSERT_TRUE(handler.buzzerIsOn());
+    TEST_ASSERT_TRUE(handler.vibrationIsOn());
 
-    handler.update(snap(Pairing::Waiting), 200);
+    handler.update(snap(Pairing::Waiting), 200);  // cancelled or sent
     TEST_ASSERT_EQUAL(asInt(SystemState::PairingWaiting), asInt(handler.state()));
+    TEST_ASSERT_FALSE(handler.buzzerIsOn());
+    TEST_ASSERT_FALSE(handler.vibrationIsOn());
+}
+
+void test_fall_countdown_keeps_going_until_it_ends() {
+    StateHandler handler = makeHandler();
+
+    handler.update(snap(Pairing::Idle, Fall::Countdown), 0);
+    handler.update(snap(Pairing::Idle, Fall::Countdown), 300);  // buzzer 200/800: off
+    TEST_ASSERT_FALSE(handler.buzzerIsOn());
+    handler.update(snap(Pairing::Idle, Fall::Countdown), 9000);  // repeats while the state lasts
+    TEST_ASSERT_TRUE(handler.buzzerIsOn());
+    TEST_ASSERT_FALSE(handler.isIdle(9000));
+}
+
+void test_fall_cancelled_flashes_green_then_goes_idle() {
+    StateHandler handler = makeHandler();
+
+    handler.update(snap(Pairing::Idle, Fall::Countdown), 0);
+    handler.update(snap(Pairing::Idle), 100);
+    handler.notify(SystemEvent::FallCancelled, 100);  // LED 400 ms
+    TEST_ASSERT_TRUE(handler.ledIsOn());
+    TEST_ASSERT_FALSE(handler.buzzerIsOn());
+
+    handler.update(snap(Pairing::Idle), 500);
+    TEST_ASSERT_FALSE(handler.ledIsOn());
+    TEST_ASSERT_TRUE(handler.isIdle(500));
 }
 
 void test_event_plays_then_ends_on_its_own() {
@@ -108,7 +136,7 @@ void test_event_does_not_touch_outputs_it_does_not_use() {
     StateHandler handler = makeHandler();
 
     handler.update(snap(Pairing::Searching), 0);  // LED blinking
-    handler.notify(SystemEvent::AlertSent, 10);   // vibration only
+    handler.notify(SystemEvent::AlertRejected, 10);  // vibration only
     TEST_ASSERT_TRUE(handler.vibrationIsOn());
     TEST_ASSERT_TRUE(handler.ledIsOn());          // keeps following the state
 }
@@ -116,13 +144,13 @@ void test_event_does_not_touch_outputs_it_does_not_use() {
 void test_output_returns_to_the_state_after_an_event() {
     StateHandler handler = makeHandler();
 
-    handler.update(snap(Pairing::Waiting, Alert::Holding), 0);  // LED steady
-    handler.notify(SystemEvent::BootFault, 0);                   // LED 3x 100/100
-    handler.update(snap(Pairing::Waiting, Alert::Holding), 150);
-    TEST_ASSERT_FALSE(handler.ledIsOn());                        // event's off phase
+    handler.update(snap(Pairing::Waiting), 0);   // LED 500/500, on until 500
+    handler.notify(SystemEvent::BootFault, 0);    // LED 3x 100/100
+    handler.update(snap(Pairing::Waiting), 150);
+    TEST_ASSERT_FALSE(handler.ledIsOn());         // event's off phase
 
-    handler.update(snap(Pairing::Waiting, Alert::Holding), 600); // event over
-    TEST_ASSERT_TRUE(handler.ledIsOn());                         // back to the steady state
+    handler.update(snap(Pairing::Waiting), 1100); // event over, state's on phase (1000-1500)
+    TEST_ASSERT_TRUE(handler.ledIsOn());          // back to the state
 }
 
 void setup() {
@@ -131,7 +159,9 @@ void setup() {
     RUN_TEST(test_resolve_state_priority);
     RUN_TEST(test_idle_does_nothing);
     RUN_TEST(test_pairing_blinks_the_led_until_it_ends);
-    RUN_TEST(test_alert_overrides_pairing_and_pairing_resumes);
+    RUN_TEST(test_fall_overrides_pairing_and_pairing_resumes);
+    RUN_TEST(test_fall_countdown_keeps_going_until_it_ends);
+    RUN_TEST(test_fall_cancelled_flashes_green_then_goes_idle);
     RUN_TEST(test_event_plays_then_ends_on_its_own);
     RUN_TEST(test_event_does_not_touch_outputs_it_does_not_use);
     RUN_TEST(test_output_returns_to_the_state_after_an_event);

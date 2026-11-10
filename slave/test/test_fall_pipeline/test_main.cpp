@@ -1,4 +1,4 @@
-// Unit tests for the fall pipeline (heuristic gate + CNN) in prototypes/fall_pipeline.h.
+// Unit tests for the fall pipeline (heuristic gate + CNN) in Fall/FallPipeline.h.
 // Golden windows come from SisFall test subjects; the expected values are what
 // the Python training code computed (see prototypes/fall_model/).
 // Run: pio test -e esp32-s3-supermini-test -f test_fall_pipeline

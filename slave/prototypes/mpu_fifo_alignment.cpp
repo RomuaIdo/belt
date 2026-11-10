@@ -49,7 +49,7 @@ constexpr uint8_t kRegFifoCountH = 0x72;
 constexpr uint8_t kRegFifoRW = 0x74;
 constexpr uint8_t kRegWhoAmI = 0x75;
 
-// Same sensor config as Sensor/Mpu6050.cpp: 100 Hz, DLPF 44 Hz, +-16 g, +-2000 dps.
+// Same sensor config as the old Sensor/Mpu6050.cpp (replaced by the BMI270): 100 Hz, DLPF 44 Hz, +-16 g, +-2000 dps.
 constexpr uint8_t kDlpf44Hz = 0x03;  // FIFO_MODE (bit 6) = 0: overwrite when full
 constexpr uint8_t kSampleRateDiv100Hz = 9;
 constexpr uint8_t kGyroFs2000 = 0x18;

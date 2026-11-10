@@ -56,10 +56,8 @@ constexpr Feedback feedbackFor(SystemState state) {
             return {Pattern::blink(150, 150), FeedbackColor::kBlue, Pattern::off(), Pattern::off()};
         case SystemState::PairingWaiting:
             return {Pattern::blink(500, 500), FeedbackColor::kBlue, Pattern::off(), Pattern::off()};
-        case SystemState::AlertHolding:
-            return {Pattern::steady(), FeedbackColor::kRed, Pattern::off(), Pattern::off()};
-        case SystemState::AlertSending:
-            return {Pattern::blink(100, 100), FeedbackColor::kRed, Pattern::off(), Pattern::off()};
+        case SystemState::FallCountdown:
+            return {Pattern::blink(200, 200), FeedbackColor::kRed, Pattern::blink(200, 800), Pattern::blink(500, 500)};
         case SystemState::Idle:
             break;
     }
@@ -75,9 +73,11 @@ constexpr Feedback feedbackFor(SystemEvent event) {
         case SystemEvent::PairingTimedOut:
             return {Pattern::off(), {}, Pattern::blink(500, 0, 1), Pattern::off()};
         case SystemEvent::AlertSent:
-            return {Pattern::off(), {}, Pattern::off(), Pattern::blink(400, 0, 1)};
+            return {Pattern::blink(400, 0, 1), FeedbackColor::kRed, Pattern::off(), Pattern::blink(400, 0, 1)};
         case SystemEvent::AlertRejected:
             return {Pattern::off(), {}, Pattern::off(), Pattern::blink(100, 100, 2)};
+        case SystemEvent::FallCancelled:
+            return {Pattern::blink(400, 0, 1), FeedbackColor::kGreen, Pattern::off(), Pattern::off()};
         case SystemEvent::BootFault:
             return {Pattern::blink(100, 100, 3), FeedbackColor::kRed, Pattern::off(), Pattern::off()};
     }

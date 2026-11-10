@@ -2,15 +2,15 @@
 
 #include <Arduino.h>
 
-#include "Alert/AlertService.h"
 #include "Domain/MasterLink.h"
-#include "Domain/SampleBuffer.h"
+#include "Fall/FallDetector.h"
+#include "Fall/FallService.h"
 #include "Input/Button.h"
 #include "Network/EspNowTransceiver.h"
 #include "Pairing/ChannelScanner.h"
 #include "Pairing/PairingService.h"
 #include "Protocol/Message.h"
-#include "Sensor/Mpu6050.h"
+#include "Sensor/Bmi270.h"
 #include "State/StateHandler.h"
 #include "Storage/MasterLinkStorage.h"
 #include "Util/AppConfig.h"
@@ -24,15 +24,18 @@
 //   3. on PairAccept (caregiver pressed Save) save the master's MAC and channel,
 //      then answer PairConfirm. Nothing is saved before that PairAccept.
 //
-// Alert: holding the alert button for kAlertHoldMs sends one Alert to the paired
-// master. Without a paired master the press is ignored.
+// Alert: one click on the alert button sends an Alert to the paired master. Without
+// a paired master the click is ignored.
 //
-// IMU: the MPU-6050 is read every kImuSampleIntervalMs (100 Hz) and each sample goes
-// into a circular buffer holding the last kImuBufferSamples (~3 s).
+// Fall: the BMI270 fills its FIFO at 50 Hz. While idle only INT1 (any-motion) is
+// watched; on movement the FIFO is read every kImuReadIntervalMs and handed to the
+// FallDetector, until kImuIdleAfterStillMs pass without movement. A confirmed fall
+// starts the FallService countdown: a click on the alert button cancels it (false
+// positive), otherwise the Alert goes to the master when it ends.
 //
-// Feedback: the StateHandler shows the pairing/alert state on the LED, buzzer and
+// Feedback: the StateHandler shows the pairing/fall state on the LED, buzzer and
 // vibration motor; this class only reports snapshot() each loop and notify()s the
-// transitions (paired, timed out, alert sent/rejected, boot fault).
+// transitions (paired, timed out, alert sent/rejected, fall cancelled, boot fault).
 class AppController {
 public:
     AppController();
@@ -58,15 +61,17 @@ private:
     Button pairingButton;
     Button alertButton;
     PairingService pairingService;
-    AlertService alertService;
+    FallService fallService;
     StateHandler stateHandler;
     ChannelScanner channelScanner;
-    Mpu6050 mpu;
+    Bmi270 imu;
+    FallDetector fallDetector;
+    fall::ImuFrame imuFrames[Bmi270::kFifoMaxFrames];  // one FIFO read
     bool radioReady = false;       // espNow.init() succeeded
-    SampleBuffer<AppConfig::kImuBufferSamples> imuBuffer;
-    bool mpuReady = false;         // begin() succeeded; reads are skipped otherwise
-    uint32_t lastImuReadMs = 0;    // last IMU read
-    uint32_t lastImuPrintMs = 0;   // last debug print of the latest sample
+    bool imuReady = false;         // begin() succeeded; reads are skipped otherwise
+    bool imuActive = false;        // moving: the FIFO is being read
+    uint32_t lastImuReadMs = 0;    // last FIFO read
+    uint32_t lastMotionMs = 0;     // last any-motion seen
 
     String lockedMaster;         // master that answered PairWait in this attempt
     uint32_t lastRequestMs = 0;    // last PairRequest sent while waiting
