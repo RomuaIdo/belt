@@ -55,7 +55,7 @@ The belt detects falls on its own, using a motion sensor and an artificial intel
 
 If the user is fine, a press of the button cancels the alert. If there is no response, the alert is sent to a family member or caregiver's phone.
 
-In more detail, the belt uses a BMI270 motion sensor. A cheap rule picks fall candidates (a strong impact followed by the body ending in another orientation), and a small neural network trained on the SisFall dataset confirms them. A confirmed fall gives the user 10 seconds to cancel. The belt then resends the alert until the base confirms it received it.
+In more detail, the belt uses a BMI270 motion sensor. A cheap rule picks fall candidates (a strong impact followed by the body ending in another orientation), and a small neural network trained on the SisFall dataset confirms them. A confirmed fall gives the user 5 seconds to cancel. The belt then resends the alert until the base confirms it received it.
 
 ---
 
@@ -74,7 +74,7 @@ In more detail, the belt uses a BMI270 motion sensor. A cheap rule picks fall ca
 | Feature | Status |
 |---|---|
 | Fall detection on the belt (BMI270 + heuristic + CNN) | Implemented, being tested on hardware |
-| Cancellation window (10 s, LED, buzzer, and vibration) | Implemented |
+| Cancellation window (5 s, LED, buzzer, and vibration) | Implemented |
 | Manual emergency button (one click) | Implemented |
 | Belt to base radio (ESP-NOW), with pairing and alert acknowledgment | Implemented |
 | Light sleep on the belt, woken by motion or buttons | Implemented, being tested on hardware |

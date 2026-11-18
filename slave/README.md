@@ -73,7 +73,7 @@ holds the last ~3.4 s.
    >= 1.6 g and the body ending >= 40 degrees from where it started). The passing window
    with the strongest impact goes to a small CNN that confirms the fall. Model, training,
    and SisFall results: [`prototypes/fall_model/README.md`](prototypes/fall_model/README.md).
-4. A confirmed fall starts `FallCountdown` (10 s): LED, buzzer, and vibration go off so the
+4. A confirmed fall starts `FallCountdown` (5 s): LED, buzzer, and vibration go off so the
    wearer notices. A click on the alert button cancels it (false positive). Otherwise the
    `Alert` goes to the master when the countdown ends, with the same ack flow as a click.
 
@@ -133,10 +133,10 @@ Defined in `include/Util/AppConfig.h`.
 | Pairing button (to GND, internal pull-up) | GPIO 4 |
 | Alert button (to GND, internal pull-up) | GPIO 5 |
 | BMI270 CS / MOSI (SDA) / SCK (SCL) / MISO (SDO) | GPIO 10 / 11 / 12 / 13 |
-| BMI270 INT1 | GPIO 7 |
+| BMI270 INT1 | GPIO 8 |
 | Status LED (onboard WS2812 RGB) | GPIO 48 |
 | Buzzer | GPIO 6 |
-| Vibration motor | GPIO 8 |
+| Vibration motor | GPIO 7 |
 
 An output set to `kNoPin` is skipped. The buzzer plays at `kBuzzerFreqHz` (2700 Hz). The
 BMI270 starts in I2C mode and switches to SPI on the first CS rising edge.

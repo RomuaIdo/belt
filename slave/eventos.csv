@@ -1,0 +1,8 @@
+Nome,Quando acontece,LED,Buzzer,Vibração,O que faz,Onde no código
+"PairingSucceeded","Master salvo e pareamento concluído","Verde 400 ms","2 bipes de 80 ms com 80 ms de intervalo","Desligado","Toca uma vez ao receber o PairAccept e gravar o master. O cinto responde PairConfirm.","App/AppController.cpp (handlePairAccept)"
+"PairingTimedOut","5 minutos de tentativa sem parear","Desligado","1 bipe de 500 ms","Desligado","Encerra a tentativa de pareamento e restaura o canal do master salvo.","App/AppController.cpp (loop)"
+"AlertSent","O master confirmou o alerta (AlertAck)","Vermelho 400 ms","Desligado","400 ms","Indica que o alerta chegou ao master. Encerra o estado AlertSending.","App/AppController.cpp (handleAlertAck)"
+"AlertRejected","Clique no botão de alerta sem master pareado","Desligado","Desligado","2 vibrações de 100 ms com 100 ms de intervalo","O alerta não é enviado porque não há master configurado.","App/AppController.cpp (sendAlert)"
+"AlertFailed","Nenhum AlertAck após as 10 tentativas","Vermelho 3 piscadas de 150/150 ms","3 bipes de 150/150 ms","Desligado","Desiste do alerta. O estado AlertSending termina.","App/AppController.cpp (resendAlert)"
+"FallCancelled","Clique no botão de alerta durante a contagem de queda","Verde 400 ms","Desligado","Desligado","Falso positivo: nenhum alerta é enviado.","App/AppController.cpp (loop)"
+"BootFault","Rádio (ESP-NOW) ou IMU não iniciaram no setup","Vermelho 3 piscadas de 100/100 ms","Desligado","Desligado","Avisa falha de hardware na inicialização. O cinto continua funcionando com o que iniciou.","App/AppController.cpp (setup)"
