@@ -67,6 +67,25 @@ bool EspNowTransceiver::setChannel(uint8_t channel) {
     return esp_wifi_get_channel(&primary, &second) == ESP_OK && primary == channel;
 }
 
+void EspNowTransceiver::suspend() {
+    if (suspended) return;
+    esp_now_deinit();  // also drops every peer
+    peers.clear();
+    esp_wifi_stop();
+    suspended = true;
+}
+
+bool EspNowTransceiver::resume() {
+    if (!suspended) return true;
+    if (esp_wifi_start() != ESP_OK) {
+        Serial.println("EspNowTransceiver: esp_wifi_start failed");
+        return false;
+    }
+    if (!init()) return false;
+    suspended = false;
+    return true;
+}
+
 bool EspNowTransceiver::ensurePeer(const uint8_t mac[6]) {
     if (esp_now_is_peer_exist(mac)) return true;
 

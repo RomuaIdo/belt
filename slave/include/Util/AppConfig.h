@@ -12,11 +12,11 @@ constexpr uint8_t kImuSpiCsPin = 10;
 constexpr uint8_t kImuSpiMosiPin = 11;  // breakout SDA/SDI
 constexpr uint8_t kImuSpiSckPin = 12;   // breakout SCL/SCK
 constexpr uint8_t kImuSpiMisoPin = 13;  // breakout SDO
-constexpr uint8_t kImuIntPin = 7;       // BMI270 INT1 (any-motion, latched, active high)
+constexpr uint8_t kImuIntPin = 8;       // BMI270 INT1 (any-motion, latched, active high)
 constexpr uint8_t kNoPin = 0xFF;        // output not wired yet: the StateHandler skips it
 constexpr uint8_t kStatusLedPin = 48;   // Onboard WS2812 RGB LED (ESP32-S3 Super Mini)
 constexpr uint8_t kBuzzerPin = 6;
-constexpr uint8_t kVibrationPin = 8;
+constexpr uint8_t kVibrationPin = 7;
 // Timing
 constexpr uint32_t kButtonDebounceMs = 30;
 // A pairing attempt lasts this long: the caregiver has to open the page, pick the
@@ -42,9 +42,12 @@ constexpr uint8_t kAlertMaxAttempts = 10;
 // INT1 when still, a timer for the next FIFO read when moving) and by both buttons.
 // Set to false while debugging over USB: the S3 USB serial drops during light sleep.
 constexpr bool kUseLightSleep = true;
+// Stay awake while a computer is on the USB port, so the serial monitor keeps working
+// (the S3 USB drops during light sleep). Running on battery, the belt sleeps normally.
+constexpr bool kStayAwakeOnUsb = true;
 
 // Fall
-constexpr uint32_t kFallCancelWindowMs = 10000;  // time to cancel a detected fall before the alert goes out
+constexpr uint32_t kFallCancelWindowMs = 5000;  // time to cancel a detected fall before the alert goes out
 
 // Feedback
 constexpr unsigned int kBuzzerFreqHz = 2700;

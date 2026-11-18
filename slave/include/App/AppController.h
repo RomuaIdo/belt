@@ -58,6 +58,7 @@ private:
     void handlePairAccept(const String& sender, uint16_t seq, uint8_t channel);
     void sendMessage(const String& mac, Protocol::MessageType type, uint16_t seq);
     void restoreMasterChannel();
+    void wakeRadio();
     void processImu();
     void resendAlert();
     void handleAlertAck(const String& sender, uint16_t seq);

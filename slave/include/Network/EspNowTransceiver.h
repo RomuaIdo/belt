@@ -34,6 +34,13 @@ public:
     // Tunes the Wi-Fi channel used by ESP-NOW and checks that it took effect.
     bool setChannel(uint8_t channel);
 
+    // Light sleep powers the radio down, and ESP-IDF requires Wi-Fi to be stopped
+    // before it. suspend() stops ESP-NOW and Wi-Fi; resume() starts them again (the
+    // channel must be set again after it). Nothing is received while suspended.
+    void suspend();
+    bool resume();
+    bool isSuspended() const { return suspended; }
+
 private:
     // ESP-NOW holds few peers (20): when full, the oldest is dropped and registered
     // again the next time it is needed.
@@ -42,4 +49,5 @@ private:
     bool ensurePeer(const uint8_t mac[6]);
 
     std::vector<std::array<uint8_t, 6>> peers;
+    bool suspended = false;
 };

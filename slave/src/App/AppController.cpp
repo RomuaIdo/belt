@@ -158,6 +158,7 @@ void AppController::processImu() {
 }
 
 void AppController::startPairing() {
+    wakeRadio();
     lockedMaster = "";
     pairingService.startSearching();
     channelScanner.reset();
@@ -210,6 +211,7 @@ void AppController::handleAlertAck(const String& sender, uint16_t seq) {
 // latched while moving, so it cannot be a wake source then). Both buttons wake it.
 void AppController::maybeSleep() {
     if (!AppConfig::kUseLightSleep) return;
+    if (AppConfig::kStayAwakeOnUsb && HWCDC::isPlugged()) return;
 
     const uint32_t now = millis();
     if (!stateHandler.isIdle(now) || pairingService.isActive() || alertPending || fallService.isCountingDown()) return;
@@ -232,6 +234,11 @@ void AppController::maybeSleep() {
     const gpio_num_t pairingPin = static_cast<gpio_num_t>(AppConfig::kPairingButtonPin);
     const gpio_num_t alertPin = static_cast<gpio_num_t>(AppConfig::kAlertButtonPin);
     const gpio_num_t imuPin = static_cast<gpio_num_t>(AppConfig::kImuIntPin);
+
+    // ESP-IDF requires Wi-Fi stopped before light sleep. It stays off after waking
+    // until something has to be sent (wakeRadio()), so the 1 s FIFO reads while
+    // moving do not restart it.
+    if (radioReady) espNow.suspend();
 
     Serial.flush();
     gpio_wakeup_enable(pairingPin, GPIO_INTR_LOW_LEVEL);
@@ -259,7 +266,18 @@ void AppController::restoreMasterChannel() {
     }
 }
 
+// Turns the radio back on after light sleep, on the paired master's channel.
+void AppController::wakeRadio() {
+    if (!radioReady || !espNow.isSuspended()) return;
+    if (!espNow.resume()) {
+        Serial.println("AppController: could not restart the radio");
+        return;
+    }
+    restoreMasterChannel();
+}
+
 void AppController::sendMessage(const String& mac, Protocol::MessageType type, uint16_t seq) {
+    wakeRadio();
     uint8_t frame[Protocol::kMaxFrameSize];
     const size_t size = Protocol::buildFrame(frame, sizeof(frame), type, seq);
     espNow.send(mac, frame, size);
