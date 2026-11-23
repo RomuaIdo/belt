@@ -9,6 +9,7 @@
 #include "Network/EspNowTransceiver.h"
 #include "Pairing/ChannelScanner.h"
 #include "Pairing/PairingService.h"
+#include "Power/BatteryMonitor.h"
 #include "Protocol/Message.h"
 #include "Sensor/Bmi270.h"
 #include "State/StateHandler.h"
@@ -42,6 +43,11 @@
 // for its ack, buttons released) the ESP goes into light sleep, as in
 // prototypes/bmi270_fall_detect.cpp: until any-motion when still, until the next
 // FIFO read when moving. Either button also wakes it.
+//
+// Battery: read through the divider on GPIO1 at boot, every kBatteryReadIntervalMs
+// (a light-sleep timer wakes the belt for it), on every button click and on every
+// confirmed fall. While it is low the state is BatteryLow (quiet, still sleeps) and
+// every low reading plays the BatteryLow event (3 beeps).
 class AppController {
 public:
     AppController();
@@ -63,6 +69,7 @@ private:
     void resendAlert();
     void handleAlertAck(const String& sender, uint16_t seq);
     void maybeSleep();
+    void checkBattery();
     SystemSnapshot snapshot() const;
 
     MasterLinkStorage masterLinkStorage;
@@ -75,6 +82,7 @@ private:
     StateHandler stateHandler;
     ChannelScanner channelScanner;
     Bmi270 imu;
+    BatteryMonitor battery;
     FallDetector fallDetector;
     fall::ImuFrame imuFrames[Bmi270::kFifoMaxFrames];  // one FIFO read
     bool radioReady = false;       // espNow.init() succeeded

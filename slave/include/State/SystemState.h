@@ -13,6 +13,7 @@ enum class SystemState : uint8_t {
     PairingWaiting,    // master answered, waiting for the caregiver to press Save
     AlertSending,      // alert sent, resending until the master's AlertAck
     FallCountdown,     // fall confirmed: the alert goes out unless the wearer cancels
+    BatteryLow,        // battery below AppConfig::kBatteryLowMv: quiet, the belt still sleeps
 };
 
 // A transition: short feedback that plays once and ends by itself.
@@ -24,6 +25,7 @@ enum class SystemEvent : uint8_t {
     AlertFailed,    // no AlertAck after every retry
     FallCancelled,  // wearer cancelled the fall countdown
     BootFault,      // radio or IMU failed to start
+    BatteryLow,     // a battery reading came out low (every reading while low)
 };
 
 // What the subsystems report; the StateHandler derives the SystemState from it.
@@ -31,9 +33,10 @@ struct SystemSnapshot {
     PairingService::State pairing = PairingService::State::Idle;
     FallService::State fall = FallService::State::Idle;
     bool alertPending = false;  // waiting for the AlertAck
+    bool batteryLow = false;    // last battery reading was low
 };
 
-// Priority: fall > alert > pairing > idle.
+// Priority: fall > alert > pairing > battery low > idle.
 inline SystemState resolveState(const SystemSnapshot& snapshot) {
     if (snapshot.fall == FallService::State::Countdown) return SystemState::FallCountdown;
     if (snapshot.alertPending) return SystemState::AlertSending;
@@ -42,7 +45,13 @@ inline SystemState resolveState(const SystemSnapshot& snapshot) {
         case PairingService::State::Waiting: return SystemState::PairingWaiting;
         default: break;  // Idle, Paired, TimedOut: nothing to show (events cover the latter two)
     }
+    if (snapshot.batteryLow) return SystemState::BatteryLow;
     return SystemState::Idle;
+}
+
+// States with no feedback of their own: the belt may sleep in them.
+inline bool isQuiet(SystemState state) {
+    return state == SystemState::Idle || state == SystemState::BatteryLow;
 }
 
 inline const char* toString(SystemState state) {
@@ -52,6 +61,7 @@ inline const char* toString(SystemState state) {
         case SystemState::PairingWaiting: return "PairingWaiting";
         case SystemState::AlertSending: return "AlertSending";
         case SystemState::FallCountdown: return "FallCountdown";
+        case SystemState::BatteryLow: return "BatteryLow";
     }
     return "?";
 }
@@ -65,6 +75,7 @@ inline const char* toString(SystemEvent event) {
         case SystemEvent::AlertFailed: return "AlertFailed";
         case SystemEvent::FallCancelled: return "FallCancelled";
         case SystemEvent::BootFault: return "BootFault";
+        case SystemEvent::BatteryLow: return "BatteryLow";
     }
     return "?";
 }

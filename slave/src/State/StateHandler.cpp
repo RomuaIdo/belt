@@ -51,7 +51,7 @@ void StateHandler::notify(SystemEvent event, uint32_t nowMs) {
 }
 
 bool StateHandler::isIdle(uint32_t nowMs) const {
-    return current == SystemState::Idle && !led.eventPlaying(nowMs) &&
+    return isQuiet(current) && !led.eventPlaying(nowMs) &&
            !buzzer.eventPlaying(nowMs) && !vibration.eventPlaying(nowMs);
 }
 

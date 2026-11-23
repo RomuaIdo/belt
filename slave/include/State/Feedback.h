@@ -49,7 +49,8 @@ constexpr Rgb kRed{32, 0, 0};
 constexpr Rgb kGreen{0, 32, 0};
 }  // namespace FeedbackColor
 
-// Plays for as long as the state lasts (repeats == 0). Idle: everything off.
+// Plays for as long as the state lasts (repeats == 0). Idle and BatteryLow: everything
+// off (BatteryLow warns through its event, so the belt can keep sleeping).
 constexpr Feedback feedbackFor(SystemState state) {
     switch (state) {
         case SystemState::PairingSearching:
@@ -61,6 +62,7 @@ constexpr Feedback feedbackFor(SystemState state) {
         case SystemState::FallCountdown:
             return {Pattern::blink(200, 200), FeedbackColor::kRed, Pattern::blink(200, 800), Pattern::blink(500, 500)};
         case SystemState::Idle:
+        case SystemState::BatteryLow:
             break;
     }
     return {};
@@ -84,6 +86,8 @@ constexpr Feedback feedbackFor(SystemEvent event) {
             return {Pattern::blink(400, 0, 1), FeedbackColor::kGreen, Pattern::off(), Pattern::off()};
         case SystemEvent::BootFault:
             return {Pattern::blink(100, 100, 3), FeedbackColor::kRed, Pattern::off(), Pattern::off()};
+        case SystemEvent::BatteryLow:
+            return {Pattern::off(), {}, Pattern::blink(200, 200, 3), Pattern::off()};
     }
     return {};
 }

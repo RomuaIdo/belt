@@ -8,8 +8,8 @@
 
 // Knows the belt's state and drives the outputs (LED, buzzer, vibration motor).
 //
-// It only acts while a state is active or an event is playing: in Idle, with no
-// event playing, update() does nothing (the belt can sleep). What each output does
+// It only acts while a state is active or an event is playing: in a quiet state
+// (Idle, BatteryLow) with no event playing, update() does nothing (the belt can sleep). What each output does
 // is decided by the tables in State/Feedback.h.
 //
 //   state: update() derives it from the subsystems' snapshot; its feedback plays
@@ -29,7 +29,7 @@ public:
 
     SystemState state() const { return current; }
 
-    // Idle and no event playing: nothing is happening.
+    // Quiet state (Idle, BatteryLow) and no event playing: nothing is happening.
     bool isIdle(uint32_t nowMs) const;
 
     // What the outputs were last told (also kept for pins that are kNoPin).

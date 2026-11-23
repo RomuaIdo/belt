@@ -10,6 +10,17 @@
 static_assert(Bmi270::kFifoMaxFrames <= FallDetector::kMaxFramesPerRead,
               "FallDetector must hold a whole FIFO read");
 
+namespace {
+// Average of a few ADC readings on the battery divider, in mV on the pin.
+uint32_t readBatteryPinMv() {
+    uint32_t sum = 0;
+    for (uint8_t i = 0; i < AppConfig::kBatteryAdcSamples; i++) {
+        sum += analogReadMilliVolts(AppConfig::kBatteryAdcPin);
+    }
+    return sum / AppConfig::kBatteryAdcSamples;
+}
+}  // namespace
+
 AppController::AppController()
     : masterLinkStorage(AppConfig::kMasterLinkFilePath),
       pairingButton(AppConfig::kButtonDebounceMs, /*activeLow=*/true),
@@ -19,7 +30,9 @@ AppController::AppController()
       stateHandler(AppConfig::kStatusLedPin, AppConfig::kBuzzerPin, AppConfig::kVibrationPin),
       channelScanner(AppConfig::kPairingMinChannel, AppConfig::kPairingMaxChannel,
                      AppConfig::kPairingChannelDwellMs, []() { return millis(); }),
-      imu(AppConfig::kImuSpiCsPin, AppConfig::kImuSpiHz) {}
+      imu(AppConfig::kImuSpiCsPin, AppConfig::kImuSpiHz),
+      battery(readBatteryPinMv, AppConfig::kBatteryDividerRatio, AppConfig::kBatteryLowMv,
+              AppConfig::kBatteryRecoverMv, AppConfig::kBatteryReadIntervalMs, []() { return millis(); }) {}
 
 void AppController::setup() {
     Serial.begin(115200);
@@ -36,6 +49,9 @@ void AppController::setup() {
     pinMode(AppConfig::kPairingButtonPin, INPUT_PULLUP);
     pinMode(AppConfig::kAlertButtonPin, INPUT_PULLUP);
     stateHandler.begin();
+
+    analogSetPinAttenuation(AppConfig::kBatteryAdcPin, ADC_11db);
+    checkBattery();
 
     radioReady = espNow.init();
     if (!radioReady) {
@@ -63,14 +79,18 @@ void AppController::setup() {
 }
 
 void AppController::loop() {
+    if (battery.isDue()) checkBattery();  // periodic reading (the sleep timer wakes the belt for it)
+
     processImu();
 
     if (pairingButton.update(digitalRead(AppConfig::kPairingButtonPin), millis())) {
+        checkBattery();  // before the radio starts sending
         Serial.println("AppController: pairing button pressed, looking for the master...");
         startPairing();
     }
 
     if (alertButton.update(digitalRead(AppConfig::kAlertButtonPin), millis())) {
+        checkBattery();
         if (fallService.cancel()) {
             Serial.println("AppController: fall cancelled by the wearer, no alert sent");
             stateHandler.notify(SystemEvent::FallCancelled, millis());
@@ -119,7 +139,7 @@ void AppController::loop() {
 }
 
 SystemSnapshot AppController::snapshot() const {
-    return {pairingService.getState(), fallService.getState(), alertPending};
+    return {pairingService.getState(), fallService.getState(), alertPending, battery.isLow()};
 }
 
 void AppController::processImu() {
@@ -148,13 +168,23 @@ void AppController::processImu() {
         Serial.printf("AppController: fall candidate (peak %.2f g, tilt %.0f deg) -> model p=%.3f, %s\n", f.peakG,
                       f.tiltChangeDeg, result.probability, result.fall ? "FALL" : "rejected");
     }
-    if (result.fall) fallService.onFallDetected();
+    if (result.fall) {
+        fallService.onFallDetected();
+        checkBattery();
+    }
 
     if (now - lastMotionMs >= AppConfig::kImuIdleAfterStillMs) {
         imuActive = false;
         fallDetector.reset();  // the next movement starts from a fresh FIFO read
         Serial.println("AppController: still, waiting for movement");
     }
+}
+
+void AppController::checkBattery() {
+    const bool low = battery.measure();
+    Serial.printf("AppController: battery %u mV%s\n", static_cast<unsigned>(battery.lastBatteryMv()),
+                  low ? " (low)" : "");
+    if (low) stateHandler.notify(SystemEvent::BatteryLow, millis());
 }
 
 void AppController::startPairing() {
@@ -208,7 +238,8 @@ void AppController::handleAlertAck(const String& sender, uint16_t seq) {
 
 // Light sleep when nothing is happening, as in prototypes/bmi270_fall_detect.cpp.
 // Still: until any-motion raises INT1. Moving: until the next FIFO read (INT1 stays
-// latched while moving, so it cannot be a wake source then). Both buttons wake it.
+// latched while moving, so it cannot be a wake source then). Both buttons wake it,
+// and a timer wakes it for the periodic battery reading.
 void AppController::maybeSleep() {
     if (!AppConfig::kUseLightSleep) return;
     if (AppConfig::kStayAwakeOnUsb && HWCDC::isPlugged()) return;
@@ -220,12 +251,13 @@ void AppController::maybeSleep() {
         return;  // pressed, or the release is still being debounced
     }
 
-    uint32_t timerMs = 0;
+    if (battery.isDue()) return;  // read it first
+    uint32_t timerMs = battery.msUntilDue();
     bool wakeOnImu = false;
     if (imuReady && imuActive) {
         const uint32_t elapsed = now - lastImuReadMs;
         if (elapsed >= AppConfig::kImuReadIntervalMs) return;  // a read is due
-        timerMs = AppConfig::kImuReadIntervalMs - elapsed;
+        timerMs = min(timerMs, AppConfig::kImuReadIntervalMs - elapsed);
     } else if (imuReady) {
         if (digitalRead(AppConfig::kImuIntPin) == HIGH) return;  // movement to handle first
         wakeOnImu = true;

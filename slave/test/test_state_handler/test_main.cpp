@@ -19,11 +19,12 @@ StateHandler makeHandler() {
     return handler;
 }
 
-SystemSnapshot snap(Pairing pairing, Fall fall = Fall::Idle, bool alertPending = false) {
+SystemSnapshot snap(Pairing pairing, Fall fall = Fall::Idle, bool alertPending = false, bool batteryLow = false) {
     SystemSnapshot snapshot;
     snapshot.pairing = pairing;
     snapshot.fall = fall;
     snapshot.alertPending = alertPending;
+    snapshot.batteryLow = batteryLow;
     return snapshot;
 }
 }  // namespace
@@ -41,6 +42,41 @@ void test_resolve_state_priority() {
                       asInt(resolveState(snap(Pairing::Waiting, Fall::Idle, true))));
     TEST_ASSERT_EQUAL(asInt(SystemState::FallCountdown),
                       asInt(resolveState(snap(Pairing::Idle, Fall::Countdown, true))));
+}
+
+void test_battery_low_has_the_lowest_priority() {
+    TEST_ASSERT_EQUAL(asInt(SystemState::BatteryLow),
+                      asInt(resolveState(snap(Pairing::Idle, Fall::Idle, false, true))));
+    TEST_ASSERT_EQUAL(asInt(SystemState::PairingSearching),
+                      asInt(resolveState(snap(Pairing::Searching, Fall::Idle, false, true))));
+    TEST_ASSERT_EQUAL(asInt(SystemState::AlertSending),
+                      asInt(resolveState(snap(Pairing::Idle, Fall::Idle, true, true))));
+    TEST_ASSERT_EQUAL(asInt(SystemState::FallCountdown),
+                      asInt(resolveState(snap(Pairing::Idle, Fall::Countdown, false, true))));
+}
+
+void test_battery_low_beeps_three_times_and_still_sleeps() {
+    StateHandler handler = makeHandler();
+    const SystemSnapshot low = snap(Pairing::Idle, Fall::Idle, false, true);
+
+    handler.update(low, 0);
+    TEST_ASSERT_EQUAL(asInt(SystemState::BatteryLow), asInt(handler.state()));
+    TEST_ASSERT_TRUE(handler.isIdle(0));  // quiet state: the belt can sleep
+
+    handler.notify(SystemEvent::BatteryLow, 0);  // buzzer 3x 200/200
+    TEST_ASSERT_TRUE(handler.buzzerIsOn());
+    TEST_ASSERT_FALSE(handler.ledIsOn());
+    TEST_ASSERT_FALSE(handler.vibrationIsOn());
+    TEST_ASSERT_FALSE(handler.isIdle(0));
+    handler.update(low, 300);
+    TEST_ASSERT_FALSE(handler.buzzerIsOn());
+    handler.update(low, 400);
+    TEST_ASSERT_TRUE(handler.buzzerIsOn());  // second beep
+    handler.update(low, 900);
+    TEST_ASSERT_TRUE(handler.buzzerIsOn());  // third beep (800-1000)
+    handler.update(low, 1200);
+    TEST_ASSERT_FALSE(handler.buzzerIsOn());
+    TEST_ASSERT_TRUE(handler.isIdle(1200));
 }
 
 void test_waiting_for_the_ack_keeps_the_belt_busy() {
@@ -191,6 +227,8 @@ void setup() {
     UNITY_BEGIN();
     RUN_TEST(test_resolve_state_priority);
     RUN_TEST(test_idle_does_nothing);
+    RUN_TEST(test_battery_low_has_the_lowest_priority);
+    RUN_TEST(test_battery_low_beeps_three_times_and_still_sleeps);
     RUN_TEST(test_waiting_for_the_ack_keeps_the_belt_busy);
     RUN_TEST(test_alert_failed_beeps_three_times);
     RUN_TEST(test_pairing_blinks_the_led_until_it_ends);

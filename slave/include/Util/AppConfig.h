@@ -50,6 +50,15 @@ constexpr bool kStayAwakeOnUsb = true;
 // Fall
 constexpr uint32_t kFallCancelWindowMs = 5000;  // time to cancel a detected fall before the alert goes out
 
+// Battery: LiPo 1S 3.7 V / 500 mAh (4.2 V full) through a 1:2 divider on GPIO1
+// (ADC1_CH0, usable with Wi-Fi on). At most 2.1 V on the pin, inside the 11 dB range.
+constexpr uint8_t kBatteryAdcPin = 1;
+constexpr uint8_t kBatteryDividerRatio = 2;
+constexpr uint32_t kBatteryLowMv = 3500;      // below this the battery is low
+constexpr uint32_t kBatteryRecoverMv = 3650;  // hysteresis: back to normal only above this
+constexpr uint32_t kBatteryReadIntervalMs = 30UL * 60UL * 1000UL;  // periodic reading (wakes from light sleep)
+constexpr uint8_t kBatteryAdcSamples = 16;    // averaged to filter the ADC noise
+
 // Feedback
 constexpr unsigned int kBuzzerFreqHz = 2700;
 
