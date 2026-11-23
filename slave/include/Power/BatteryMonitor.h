@@ -33,6 +33,13 @@ public:
     bool isLow() const { return low; }
     uint32_t lastBatteryMv() const { return batteryMv; }
 
+    // Charge of the last reading, 0..100 (LiPo 1S discharge curve, at rest).
+    uint8_t lastPercent() const { return percentFromMv(batteryMv); }
+
+    // LiPo 1S voltage -> charge, interpolated over a discharge curve (4.2 V = 100 %,
+    // 3.3 V = 0 %). Rough: the voltage also depends on the load and the temperature.
+    static uint8_t percentFromMv(uint32_t mv);
+
 private:
     ReadMvFn readPinMv;
     uint8_t dividerRatio;

@@ -182,8 +182,8 @@ void AppController::processImu() {
 
 void AppController::checkBattery() {
     const bool low = battery.measure();
-    Serial.printf("AppController: battery %u mV%s\n", static_cast<unsigned>(battery.lastBatteryMv()),
-                  low ? " (low)" : "");
+    Serial.printf("AppController: battery %.2f V, %u%%%s\n", battery.lastBatteryMv() / 1000.0f,
+                  static_cast<unsigned>(battery.lastPercent()), low ? " LOW" : "");
     if (low) stateHandler.notify(SystemEvent::BatteryLow, millis());
 }
 

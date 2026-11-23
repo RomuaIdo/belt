@@ -92,8 +92,9 @@ no pairing is running, no alert is waiting for its ack, and both buttons are rel
 30 min, on every button click (before the radio sends) and on every confirmed fall. Below
 3.5 V the belt enters `BatteryLow` and beeps three times (200 ms on / 200 ms off) on every
 low reading; it leaves the state only above 3.65 V. `BatteryLow` is quiet, so the belt keeps
-sleeping. Thresholds and interval are in `AppConfig` (`kBattery*`). The reading is logged,
-for example `AppController: battery 3912 mV`.
+sleeping. Thresholds and interval are in `AppConfig` (`kBattery*`). Every reading is logged
+with an estimated charge from a LiPo discharge curve (`BatteryMonitor::percentFromMv`), for
+example `AppController: battery 3.91 V, 68%`, or `... LOW` while the battery is low.
 
 The S3 USB serial drops during light sleep: set `AppConfig::kUseLightSleep = false` to
 debug over USB.
