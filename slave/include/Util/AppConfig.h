@@ -7,12 +7,13 @@ namespace AppConfig {
 // Pinout
 constexpr uint8_t kPairingButtonPin = 4; // Target PCB pin
 constexpr uint8_t kAlertButtonPin = 5;   // Target PCB pin
-// BMI270 over SPI. GPIO10-13 are the S3 FSPI IOMUX pins.
-constexpr uint8_t kImuSpiCsPin = 10;
-constexpr uint8_t kImuSpiMosiPin = 11;  // breakout SDA/SDI
-constexpr uint8_t kImuSpiSckPin = 12;   // breakout SCL/SCK
-constexpr uint8_t kImuSpiMisoPin = 13;  // breakout SDO
-constexpr uint8_t kImuIntPin = 8;       // BMI270 INT1 (any-motion, latched, active high)
+// BMI270 over SPI. Routed through the GPIO matrix (not the FSPI IOMUX order),
+// fine at kImuSpiHz (matrix limit is ~40 MHz).
+constexpr uint8_t kImuSpiCsPin = 10;    // breakout CS/CSB
+constexpr uint8_t kImuSpiMosiPin = 12;  // breakout SDA/SDI
+constexpr uint8_t kImuSpiSckPin = 13;   // breakout SCL/SCK
+constexpr uint8_t kImuSpiMisoPin = 11;  // breakout SDO
+constexpr uint8_t kImuIntPin = 9;       // BMI270 INT1 (any-motion, latched, active high)
 constexpr uint8_t kNoPin = 0xFF;        // output not wired yet: the StateHandler skips it
 constexpr uint8_t kStatusLedPin = 48;   // Onboard WS2812 RGB LED (ESP32-S3 Super Mini)
 constexpr uint8_t kBuzzerPin = 6;

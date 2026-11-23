@@ -132,8 +132,8 @@ Defined in `include/Util/AppConfig.h`.
 |---|---|
 | Pairing button (to GND, internal pull-up) | GPIO 4 |
 | Alert button (to GND, internal pull-up) | GPIO 5 |
-| BMI270 CS / MOSI (SDA) / SCK (SCL) / MISO (SDO) | GPIO 10 / 11 / 12 / 13 |
-| BMI270 INT1 | GPIO 8 |
+| BMI270 CS / MOSI (SDA) / SCK (SCL) / MISO (SDO) | GPIO 10 / 12 / 13 / 11 |
+| BMI270 INT1 | GPIO 9 |
 | Status LED (onboard WS2812 RGB) | GPIO 48 |
 | Buzzer | GPIO 6 |
 | Vibration motor | GPIO 7 |
