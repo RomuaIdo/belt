@@ -85,6 +85,15 @@ no pairing is running, no alert is waiting for its ack, and both buttons are rel
 - While moving, it sleeps until the next 1 s FIFO read. INT1 stays latched while moving,
   so a timer is used then.
 - Either button also wakes it.
+- A timer wakes it every 30 min for the battery reading.
+
+**Battery.** The LiPo (3.7 V, 4.2 V full, 500 mAh) goes through a 1:2 divider into GPIO 1
+(ADC1, works with the radio on). `BatteryMonitor` averages 16 ADC readings at boot, every
+30 min, on every button click (before the radio sends) and on every confirmed fall. Below
+3.5 V the belt enters `BatteryLow` and beeps three times (200 ms on / 200 ms off) on every
+low reading; it leaves the state only above 3.65 V. `BatteryLow` is quiet, so the belt keeps
+sleeping. Thresholds and interval are in `AppConfig` (`kBattery*`). The reading is logged,
+for example `AppController: battery 3912 mV`.
 
 The S3 USB serial drops during light sleep: set `AppConfig::kUseLightSleep = false` to
 debug over USB.
@@ -93,7 +102,7 @@ debug over USB.
 
 `StateHandler` knows what the belt is doing and drives the outputs. It only acts while a
 state is active or an event is playing; in `Idle` with no event playing, `update()` does
-nothing and `isIdle()` returns true, so the belt can go to sleep.
+nothing and `isIdle()` returns true (the same in `BatteryLow`, which has no feedback of its own), so the belt can go to sleep.
 
 - A **state** plays for as long as it lasts.
 - An **event** is a short feedback played once over the state's, only on the outputs it
@@ -106,6 +115,7 @@ nothing and `isIdle()` returns true, so the belt can go to sleep.
 | `PairingWaiting` | LED blinks blue, 500 ms on / 500 ms off |
 | `AlertSending` | LED blinks red, 100 ms on / 100 ms off (waiting for the `AlertAck`) |
 | `FallCountdown` | LED blinks red 200/200 ms, buzzer beeps 200 ms every 1 s, motor vibrates 500/500 ms |
+| `BatteryLow` | Everything off (the `BatteryLow` event warns); the belt still sleeps |
 
 | Event | Behavior (placeholder values) |
 |---|---|
@@ -116,8 +126,9 @@ nothing and `isIdle()` returns true, so the belt can go to sleep.
 | `AlertFailed` | Three beeps and red LED blinks (no `AlertAck` after every retry) |
 | `FallCancelled` | One 400 ms green LED pulse |
 | `BootFault` | LED blinks red three times (radio or IMU failed to start) |
+| `BatteryLow` | Three 200 ms beeps, 200 ms apart (on every low battery reading) |
 
-State priority is fall countdown, then alert, then pairing, then idle. Every transition is
+State priority is fall countdown, then alert, then pairing, then battery low, then idle. Every transition is
 logged on the serial monitor, for example `StateHandler: Idle -> PairingSearching`.
 
 To change what an output does, edit the tables in
@@ -137,6 +148,7 @@ Defined in `include/Util/AppConfig.h`.
 | Status LED (onboard WS2812 RGB) | GPIO 48 |
 | Buzzer | GPIO 6 |
 | Vibration motor | GPIO 7 |
+| Battery (1:2 divider, ADC1_CH0) | GPIO 1 |
 
 An output set to `kNoPin` is skipped. The buzzer plays at `kBuzzerFreqHz` (2700 Hz). The
 BMI270 starts in I2C mode and switches to SPI on the first CS rising edge.

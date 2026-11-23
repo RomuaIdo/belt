@@ -80,7 +80,7 @@ In more detail, the belt uses a BMI270 motion sensor. A cheap rule picks fall ca
 | Light sleep on the belt, woken by motion or buttons | Implemented, being tested on hardware |
 | Telegram notifications with a persistent retry queue | Implemented |
 | Configuration page on the base (Wi-Fi, Telegram, belts) | Implemented |
-| Low battery warning | Not implemented yet |
+| Low battery warning (belt beeps; not sent to the base yet) | Implemented, being tested on hardware |
 | Heartbeat (alert when the belt goes silent) | Not implemented yet |
 
 ---
