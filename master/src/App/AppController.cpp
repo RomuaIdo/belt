@@ -30,6 +30,14 @@ constexpr uint32_t WIFI_SCAN_RETRY_MS = 1000;  // After a scan that failed to st
 constexpr uint8_t WIFI_QUICK_RETRY_LIMIT = 5;
 constexpr uint32_t WIFI_QUICK_RETRY_DELAY_MS = 1000;
 
+// An attempt that neither connects nor reports a disconnect in this time is dropped,
+// so a lost or never-sent event cannot leave the master waiting on it forever.
+constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 20000;
+
+// Even after the password is judged wrong, try again this often: the judgement can be
+// wrong (e.g. a router rebooting), and otherwise the master would stay offline for good.
+constexpr uint32_t WIFI_WRONG_PASSWORD_RETRY_MS = 300000;
+
 constexpr uint32_t RETRY_INITIAL_MS = 5000;
 constexpr uint32_t RETRY_MAX_MS = 300000;
 
@@ -152,6 +160,7 @@ void AppController::onWifiConfigChanged() {
     wifiScanRunning = false;
     wifiConnecting = false;
     wifiWrongPassword = false;
+    wifiFailures.reset();
     wifiQuickRetries = 0;
     wifiRetryAtMs = 0;
     wifiWaitingForNetwork = false;
@@ -161,9 +170,12 @@ void AppController::onWifiConfigChanged() {
 
 void AppController::connectWifi() {
     Serial.printf("AppController: connecting to Wi-Fi '%s'\n", config.wifiSsid.c_str());
-    WiFi.begin(config.wifiSsid.c_str(), config.wifiPassword.c_str());
+    // Set before WiFi.begin(): a failure event can arrive on the event task before
+    // begin() returns, and onWifiStaDisconnected() drops it unless this is set.
     wifiConnecting = true;
+    wifiConnectStartedMs = millis();
     wifiWaitingForNetwork = false;
+    WiFi.begin(config.wifiSsid.c_str(), config.wifiPassword.c_str());
 }
 
 void AppController::scheduleWifiScan(uint32_t delayMs) {
@@ -210,16 +222,26 @@ void AppController::checkWifiScanResult() {
     }
 
     bool nearby = false;
+    bool hiddenNearby = false;  // Hidden networks are listed with an empty SSID
     for (int i = 0; i < result; ++i) {
-        if (WiFi.SSID(i) == config.wifiSsid) {
+        const String ssid = WiFi.SSID(i);
+        if (ssid == config.wifiSsid) {
             nearby = true;
             break;
         }
+        if (ssid.isEmpty()) hiddenNearby = true;
     }
     WiFi.scanDelete();
 
     if (nearby) {
         wifiQuickRetries = 0;
+        connectWifi();
+    } else if (hiddenNearby) {
+        // The saved network may be that hidden one; WiFi.begin() probes for it by
+        // name. No quick retries if it fails: it may just be a neighbour's network.
+        Serial.printf("AppController: saved network '%s' not listed, but a hidden network is nearby; trying it\n",
+                      config.wifiSsid.c_str());
+        wifiQuickRetries = WIFI_QUICK_RETRY_LIMIT;
         connectWifi();
     } else {
         wifiWaitingForNetwork = true;
@@ -231,18 +253,27 @@ void AppController::checkWifiScanResult() {
 void AppController::onWifiStaDisconnected(uint8_t reason) {
     if (!wifiConnecting) return;  // Not our attempt failing (e.g. a drop while idle).
     wifiConnecting = false;
+    onWifiAttemptFailed(reason);
+}
 
-    if (isWifiAuthFailure(reason)) {
-        wifiWrongPassword = true;
-        wifiRetryAtMs = 0;
-        // A wrong password still leaves the station associated at the 802.11 level
-        // (only the 4-way handshake failed), and some routers keep re-offering the
-        // handshake to an associated client: without this, the retries kept coming
-        // from the driver itself every few seconds, with nothing left on our side
-        // to stop (confirmed on hardware). Disconnecting tears the association down.
+void AppController::onWifiAttemptFailed(uint8_t reason) {
+    if (classifyWifiFailure(reason) != WifiFailure::Other) {
+        // A failed handshake still leaves the station associated at the 802.11 level,
+        // and some routers keep re-offering the handshake to an associated client:
+        // without this, the retries kept coming from the driver itself every few
+        // seconds, with nothing left on our side to stop (confirmed on hardware).
+        // Disconnecting tears the association down. Its own disconnect event is
+        // ignored, since wifiConnecting is already false.
         WiFi.disconnect();
-        Serial.printf("AppController: Wi-Fi '%s' rejected the password (reason %u); giving up\n",
-                      config.wifiSsid.c_str(), static_cast<unsigned>(reason));
+    }
+
+    if (wifiFailures.recordFailure(reason)) {
+        wifiWrongPassword = true;
+        wifiWrongPasswordAtMs = millis();
+        wifiRetryAtMs = 0;
+        Serial.printf("AppController: Wi-Fi '%s' rejected the password (reason %u); retrying only every %u min\n",
+                      config.wifiSsid.c_str(), static_cast<unsigned>(reason),
+                      static_cast<unsigned>(WIFI_WRONG_PASSWORD_RETRY_MS / 60000));
         return;
     }
 
@@ -266,6 +297,7 @@ void AppController::maintainWifi() {
     if (WiFi.status() == WL_CONNECTED) {
         wifiConnecting = false;
         wifiWrongPassword = false;
+        wifiFailures.reset();
         wifiQuickRetries = 0;
         wifiRetryAtMs = 0;
         wifiWaitingForNetwork = false;
@@ -277,13 +309,27 @@ void AppController::maintainWifi() {
         return;
     }
 
-    // Stop automatic retries on wrong password until credentials change.
+    // On a wrong password, only a slow retry until the credentials change.
     if (wifiWrongPassword) {
-        return;
+        if (millis() - wifiWrongPasswordAtMs < WIFI_WRONG_PASSWORD_RETRY_MS) return;
+        Serial.printf("AppController: retrying Wi-Fi '%s' in case the password was right after all\n",
+                      config.wifiSsid.c_str());
+        // wifiFailures keeps its count, so one more rejection flags the password again.
+        wifiWrongPassword = false;
+        wifiQuickRetries = 0;
+        wifiRetryAtMs = 0;
+        scheduleWifiScan(0);
     }
 
     if (wifiConnecting) {
-        return;  // Awaiting WL_CONNECTED or the disconnected event above.
+        // Awaiting WL_CONNECTED or the disconnected event above.
+        if (millis() - wifiConnectStartedMs < WIFI_CONNECT_TIMEOUT_MS) return;
+        Serial.printf("AppController: Wi-Fi '%s' gave no answer in %u s; dropping the attempt\n",
+                      config.wifiSsid.c_str(), static_cast<unsigned>(WIFI_CONNECT_TIMEOUT_MS / 1000));
+        wifiConnecting = false;  // Before disconnect(), so its event is ignored.
+        WiFi.disconnect();
+        onWifiAttemptFailed(WIFI_REASON_UNSPECIFIED);
+        return;
     }
 
     if (wifiRetryAtMs != 0) {
