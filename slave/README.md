@@ -44,7 +44,7 @@ Header-only files (such as `State/Feedback.h`) do not require a `.cpp` file.
   countdown, processes incoming radio frames, and hands the current state to the
   `StateHandler`.
 
-**Pairing** (pairing button, GPIO 4). The belt starts it; only the master knows the
+**Pairing** (pairing button, GPIO 2). The belt starts it; only the master knows the
 router's Wi-Fi channel, so the belt looks for it:
 
 1. The belt scans channels 1 to 13 (300 ms each), sending a broadcast `PairRequest` on each.
@@ -57,7 +57,7 @@ router's Wi-Fi channel, so the belt looks for it:
 
 The whole attempt times out after 5 minutes.
 
-**Alert** (alert button, GPIO 5). One click sends an `Alert` to the paired master. Without
+**Alert** (alert button, GPIO 7). One click sends an `Alert` to the paired master. Without
 a paired master the click is rejected. During a fall countdown the click cancels the fall
 instead. After sending, the belt stays awake in `AlertSending` and resends the `Alert` with
 the same seq every 500 ms until the master's `AlertAck` arrives (`AlertSent`), for up to 10
@@ -87,7 +87,7 @@ no pairing is running, no alert is waiting for its ack, and both buttons are rel
 - Either button also wakes it.
 - A timer wakes it every 30 min for the battery reading.
 
-**Battery.** The LiPo (3.7 V, 4.2 V full, 500 mAh) goes through a 1:2 divider into GPIO 1
+**Battery.** The LiPo (3.7 V, 4.2 V full, 500 mAh) goes through a 1:2 divider into GPIO 8
 (ADC1, works with the radio on). `BatteryMonitor` averages 16 ADC readings at boot, every
 30 min, on every button click (before the radio sends) and on every confirmed fall. Below
 3.5 V the belt enters `BatteryLow` and beeps three times (200 ms on / 200 ms off) on every
@@ -142,14 +142,14 @@ Defined in `include/Util/AppConfig.h`.
 
 | Function | Pin |
 |---|---|
-| Pairing button (to GND, internal pull-up) | GPIO 4 |
-| Alert button (to GND, internal pull-up) | GPIO 5 |
+| Pairing button (to GND, internal pull-up) | GPIO 2 |
+| Alert button (to GND, internal pull-up) | GPIO 7 |
 | BMI270 CS / MOSI (SDA) / SCK (SCL) / MISO (SDO) | GPIO 10 / 12 / 13 / 11 |
 | BMI270 INT1 | GPIO 9 |
 | Status LED (onboard WS2812 RGB) | GPIO 48 |
-| Buzzer | GPIO 6 |
-| Vibration motor | GPIO 7 |
-| Battery (1:2 divider, ADC1_CH0) | GPIO 1 |
+| Buzzer | GPIO 1 |
+| Vibration motor | GPIO 6 |
+| Battery (1:2 divider, ADC1_CH7) | GPIO 8 |
 
 An output set to `kNoPin` is skipped. The buzzer plays at `kBuzzerFreqHz` (2700 Hz). The
 BMI270 starts in I2C mode and switches to SPI on the first CS rising edge.

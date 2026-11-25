@@ -5,8 +5,8 @@
 namespace AppConfig {
 
 // Pinout
-constexpr uint8_t kPairingButtonPin = 4; // Target PCB pin
-constexpr uint8_t kAlertButtonPin = 5;   // Target PCB pin
+constexpr uint8_t kPairingButtonPin = 2; // Target PCB pin
+constexpr uint8_t kAlertButtonPin = 7;   // Target PCB pin
 // BMI270 over SPI. Routed through the GPIO matrix (not the FSPI IOMUX order),
 // fine at kImuSpiHz (matrix limit is ~40 MHz).
 constexpr uint8_t kImuSpiCsPin = 10;    // breakout CS/CSB
@@ -16,8 +16,8 @@ constexpr uint8_t kImuSpiMisoPin = 11;  // breakout SDO
 constexpr uint8_t kImuIntPin = 9;       // BMI270 INT1 (any-motion, latched, active high)
 constexpr uint8_t kNoPin = 0xFF;        // output not wired yet: the StateHandler skips it
 constexpr uint8_t kStatusLedPin = 48;   // Onboard WS2812 RGB LED (ESP32-S3 Super Mini)
-constexpr uint8_t kBuzzerPin = 6;
-constexpr uint8_t kVibrationPin = 7;
+constexpr uint8_t kBuzzerPin = 1;
+constexpr uint8_t kVibrationPin = 6;
 // Timing
 constexpr uint32_t kButtonDebounceMs = 30;
 // A pairing attempt lasts this long: the caregiver has to open the page, pick the
@@ -50,9 +50,9 @@ constexpr bool kStayAwakeOnUsb = true;
 // Fall
 constexpr uint32_t kFallCancelWindowMs = 5000;  // time to cancel a detected fall before the alert goes out
 
-// Battery: LiPo 1S 3.7 V / 500 mAh (4.2 V full) through a 1:2 divider on GPIO1
-// (ADC1_CH0, usable with Wi-Fi on). At most 2.1 V on the pin, inside the 11 dB range.
-constexpr uint8_t kBatteryAdcPin = 1;
+// Battery: LiPo 1S 3.7 V / 500 mAh (4.2 V full) through a 1:2 divider on GPIO8
+// (ADC1_CH7, usable with Wi-Fi on). At most 2.1 V on the pin, inside the 11 dB range.
+constexpr uint8_t kBatteryAdcPin = 8;
 constexpr uint8_t kBatteryDividerRatio = 2;
 constexpr uint32_t kBatteryLowMv = 3500;      // below this the battery is low
 constexpr uint32_t kBatteryRecoverMv = 3650;  // hysteresis: back to normal only above this

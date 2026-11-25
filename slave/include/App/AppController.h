@@ -44,7 +44,7 @@
 // prototypes/bmi270_fall_detect.cpp: until any-motion when still, until the next
 // FIFO read when moving. Either button also wakes it.
 //
-// Battery: read through the divider on GPIO1 at boot, every kBatteryReadIntervalMs
+// Battery: read through the divider on GPIO8 at boot, every kBatteryReadIntervalMs
 // (a light-sleep timer wakes the belt for it), on every button click and on every
 // confirmed fall. While it is low the state is BatteryLow (quiet, still sleeps) and
 // every low reading plays the BatteryLow event (3 beeps).
