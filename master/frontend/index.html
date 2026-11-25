@@ -34,6 +34,21 @@
         <button id="home-retry" type="button" class="btn btn-quiet" hidden>Try again</button>
       </div>
 
+      <!-- Alerts received from the belts (every one since the master started) -->
+      <section id="section-alerts" class="panel panel-alerts" hidden aria-labelledby="alerts-title">
+        <div class="panel-head">
+          <svg class="alert-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+            <path d="M12 3.5 2.8 19.5h18.4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+            <path d="M12 10v4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+            <circle cx="12" cy="17" r="1.1" fill="currentColor"></circle>
+          </svg>
+          <h2 id="alerts-title">Alerts</h2>
+          <span id="alerts-count" class="count count-alert" aria-hidden="true"></span>
+          <button id="alerts-clear" type="button" class="btn btn-quiet btn-sm">Clear all</button>
+        </div>
+        <ul id="alerts-list" class="rows" aria-live="polite"></ul>
+      </section>
+
       <!-- Waiting to be set up -->
       <section id="section-pending" class="panel panel-pending" hidden aria-labelledby="pending-title">
         <div class="panel-head">

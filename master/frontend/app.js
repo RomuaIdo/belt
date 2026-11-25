@@ -280,6 +280,158 @@ async function refreshPending() {
   }
 }
 
+// Alerts received from the belts. Every alert is its own row, newest first, so
+// repeated falls (of one belt or several) all stay listed until dismissed.
+
+let knownAlertIds = null;  // null until the first load: existing alerts don't announce
+const firstSeenAt = new Map();  // id -> Date, for alerts without a synced clock
+const BASE_TITLE = document.title;
+
+const ALERT_STATUS = {
+  enviando: ['Sending to Telegram…', 'is-wait'],
+  tentando_novamente: ['Telegram not reached yet, retrying…', 'is-wait'],
+  enviado: ['Sent on Telegram', 'is-ok'],
+  parcial: ['Sent, but some chats refused it', 'is-bad'],
+  falhou: ['Not delivered: Telegram refused every chat', 'is-bad'],
+  sem_destinatarios: ['Not sent: this belt has no recipients set up', 'is-bad'],
+  cinto_nao_cadastrado: ['Not sent: this belt is not set up on this master. Press its pairing button to set it up.', 'is-bad'],
+};
+
+// Clock time, with the date too when it is not today.
+function clockTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString()} ${time}`;
+}
+
+// When the last chat got it, once every chat that could be reached was delivered.
+function deliveredAt(conversas) {
+  const times = conversas.map((c) => c.entregue_em).filter(Boolean).sort();
+  return times.length ? times[times.length - 1] : '';
+}
+
+const CHAT_STATUS = {
+  enviando: 'waiting to send',
+  tentando_novamente: 'retrying',
+  enviado: 'delivered to Telegram',
+  recusado: 'refused by Telegram',
+};
+
+function chatName(chatId) {
+  // Names are known only after "Find conversations" ran in this session.
+  const name = chatOptions.get(chatId);
+  return name || `chat ${chatId}`;
+}
+
+function alertRow(a, isNew) {
+  const [statusText, statusClass] = ALERT_STATUS[a.situacao] || ['Unknown status', 'is-wait'];
+  const conversas = a.conversas || [];
+  const sentCount = conversas.filter((c) => c.situacao === 'enviado').length;
+  const when = a.recebido_em || (firstSeenAt.get(a.id) || new Date()).toISOString();
+  const exact = a.recebido_em ? ` · ${clockTime(a.recebido_em)}` : '';
+  const delivered = deliveredAt(conversas);
+  const showDelivered = delivered && (a.situacao === 'enviado' || a.situacao === 'parcial');
+
+  let status = conversas.length > 1 ? `${statusText} (${sentCount} of ${conversas.length} chats)` : statusText;
+  if (showDelivered) status += ` at ${clockTime(delivered)}`;
+
+  return h('li', { class: isNew ? 'just-alerted' : null },
+    h('div', { class: 'row-main' },
+      h('span', { class: 'dev-name', text: `Alert from ${a.nome}` }),
+      h('span', { class: 'dev-alias', text: `received ${relativeTime(when)}${exact}` }),
+    ),
+    h('p', { class: `alert-status ${statusClass}`, text: status }),
+    conversas.length
+      ? h('ul', { class: 'alert-chats' },
+          ...conversas.map((c) => h('li', {
+            text: `${chatName(c.chat_id)}: ${CHAT_STATUS[c.situacao] || c.situacao}`
+              + (c.situacao === 'enviado' && c.entregue_em ? ` at ${clockTime(c.entregue_em)}` : '')
+              + (c.situacao === 'tentando_novamente' && c.http ? ` (error ${c.http})` : ''),
+          })))
+      : null,
+    h('div', { class: 'row-actions' },
+      h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => dismissAlert(a) }, 'Dismiss'),
+    ),
+  );
+}
+
+function renderAlerts(alertas) {
+  const sec = $('section-alerts');
+  const list = $('alerts-list');
+  const announce = knownAlertIds !== null;
+  const fresh = announce ? alertas.filter((a) => !knownAlertIds.has(a.id)) : [];
+
+  for (const a of alertas) if (!firstSeenAt.has(a.id)) firstSeenAt.set(a.id, new Date());
+  knownAlertIds = new Set(alertas.map((a) => a.id));
+  const freshIds = new Set(fresh.map((a) => a.id));
+
+  list.replaceChildren(...alertas.map((a) => alertRow(a, freshIds.has(a.id))));
+  sec.hidden = !alertas.length;
+  $('alerts-count').textContent = String(alertas.length);
+  document.title = alertas.length ? `(${alertas.length}) ${BASE_TITLE}` : BASE_TITLE;
+
+  if (fresh.length) {
+    toast(fresh.length === 1 ? `Alert from ${fresh[0].nome}!` : `${fresh.length} new alerts!`);
+    beep();
+  }
+}
+
+async function refreshAlerts() {
+  try {
+    const res = await api('GET', '/api/alertas');
+    renderAlerts(res.alertas || []);
+  } catch (e) {
+    // Silently ignore polling errors
+  }
+}
+
+async function dismissAlert(a) {
+  try {
+    await api('DELETE', `/api/alertas/${encodeURIComponent(a.id)}`);
+    refreshAlerts();
+  } catch (e) {
+    toast("Couldn't dismiss it. Try again.");
+  }
+}
+
+async function clearAlerts() {
+  const ok = await askConfirm('Clear every alert from this list? Telegram messages are not affected.', 'Clear all');
+  if (!ok) return;
+  try {
+    await api('DELETE', '/api/alertas');
+    refreshAlerts();
+  } catch (e) {
+    toast("Couldn't clear the list. Try again.");
+  }
+}
+
+// Short two-tone beep. Browsers only allow sound after the user has interacted
+// with the page once; before that it silently does nothing.
+let audioCtx = null;
+function beep() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t0 = audioCtx.currentTime;
+    for (const [i, freq] of [880, 660, 880].entries()) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t0 + i * 0.22);
+      gain.gain.exponentialRampToValueAtTime(0.25, t0 + i * 0.22 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.22 + 0.2);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0 + i * 0.22);
+      osc.stop(t0 + i * 0.22 + 0.21);
+    }
+  } catch (e) {
+    // No audio available
+  }
+}
+
+$('alerts-clear').addEventListener('click', clearAlerts);
+
 // Settings
 
 async function openSettings() {
@@ -786,12 +938,16 @@ document.addEventListener('visibilitychange', () => {
 
 setInterval(() => {
   if (!document.hidden && !$('view-home').hidden) refreshPending();
+  // Alerts poll in a background tab and on every view too: the tab title, the toast
+  // and the beep must announce a fall wherever the caregiver is.
+  refreshAlerts();
 }, 3000);
 
 // Start
 
 // Open settings directly if Wi-Fi or token is unconfigured.
 async function start() {
+  refreshAlerts();
   try {
     const status = await api('GET', '/api/status');
     if (!status.wifi.conectado || !status.telegram.configurado) {

@@ -44,6 +44,19 @@ Header-only utilities do not require a `.cpp` file.
   writes it to the queue, and delivery is processed in `execute()`. Network errors and
   5xx/429 HTTP statuses retry with backoff from 5 s to 5 min; HTTP 400/403 drops that chat.
 
+**Alerts on the page.** Every alert a belt sends is listed at the top of the page
+(`GET /api/alertas`, polled every 3 s), newest first: one row per alert, so repeated falls of
+one or more belts all stay listed. Each row shows the belt, when it arrived and how the Telegram
+send went for each chat (waiting, delivered to Telegram with the time it was delivered, retrying,
+refused). An alert from a belt that is not registered on this master (a valid frame, so one of
+our belts, maybe paired elsewhere or removed by mistake) is listed too, marked as not sent; it is
+not acknowledged, so the belt reports the alert as failed. A new alert also
+shows a toast, beeps (once the page has been touched, as browsers require) and puts the count in
+the tab title. Rows stay until someone presses Dismiss or Clear all (`DELETE /api/alertas[/{id}]`).
+The list is kept in RAM, up to 50 alerts: a reboot clears it, except alerts still waiting in the
+queue. "Delivered" means Telegram accepted the message, not that someone read it. The belt sends
+the same frame for a fall and for its alert button, so the page cannot tell them apart.
+
 **Wi-Fi.** The master scans for the saved network and connects only when it is nearby
 (re-scanning every 30 s while disconnected). A hidden network is not listed by name, so
 if the scan finds any hidden network the master tries the saved one anyway. A few quick
@@ -135,6 +148,7 @@ Available test suites:
 | `test_pairing_service` | Wait for the belt's `PairConfirm` and its timeout |
 | `test_protocol` | Frame building and parsing |
 | `test_wifi_policy` | Wi-Fi disconnect reason classification and wrong-password detection |
+| `test_alert_log` | Alerts listed on the page: one entry per alert, capacity, Telegram status per chat |
 | `test_status_led` | LED breathing curve |
 | `test_config_storage` | Configuration persistence across a reboot (writes to flash) |
 | `test_call_queue_storage` | Alert queue persistence across a reboot, with power-loss simulation |

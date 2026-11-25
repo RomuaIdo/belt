@@ -6,6 +6,7 @@
 #include <functional>
 #include <vector>
 
+#include "Domain/AlertLog.h"
 #include "Domain/PendingPairing.h"
 #include "Domain/SystemConfig.h"
 #include "Storage/ConfigStorage.h"
@@ -25,6 +26,10 @@ public:
     using PendingPairingsProvider = std::function<std::vector<PendingPairing>()>;
     using DiscardPendingCallback = std::function<void(const String& mac)>;
     using WifiWrongPasswordProvider = std::function<bool()>;
+    using AlertsProvider = std::function<std::vector<AlertLog::Entry>()>;
+    // Removes an alert from the page; returns false if it was not listed.
+    using DismissAlertCallback = std::function<bool(const String& id)>;
+    using ClearAlertsCallback = std::function<void()>;
     // Saves a belt (executes handshake for new belts, saving on confirmation).
     using SaveDeviceCallback = std::function<SaveDeviceResult(const PeerNode& peer)>;
 
@@ -39,6 +44,9 @@ public:
     void setOnDiscardPending(DiscardPendingCallback callback) { onDiscardPending = std::move(callback); }
     void setOnSaveDevice(SaveDeviceCallback callback) { onSaveDevice = std::move(callback); }
     void setWifiWrongPasswordProvider(WifiWrongPasswordProvider callback) { wifiWrongPassword = std::move(callback); }
+    void setListAlerts(AlertsProvider callback) { listAlerts = std::move(callback); }
+    void setOnDismissAlert(DismissAlertCallback callback) { onDismissAlert = std::move(callback); }
+    void setOnClearAlerts(ClearAlertsCallback callback) { onClearAlerts = std::move(callback); }
 
 private:
     void serveFile(const char* path, const char* contentType);
@@ -63,6 +71,9 @@ private:
     void handleDeviceDelete();
     void handlePendingList();
     void handlePendingDelete();
+    void handleAlertsList();
+    void handleAlertDelete();
+    void handleAlertsClear();
 
     WebServer server{80};
     SystemConfig& config;
@@ -72,4 +83,7 @@ private:
     DiscardPendingCallback onDiscardPending;
     SaveDeviceCallback onSaveDevice;
     WifiWrongPasswordProvider wifiWrongPassword;
+    AlertsProvider listAlerts;
+    DismissAlertCallback onDismissAlert;
+    ClearAlertsCallback onClearAlerts;
 };

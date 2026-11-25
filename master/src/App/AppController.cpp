@@ -81,6 +81,7 @@ bool AppController::setup() {
     pendingNotifications = callQueueStorage->loadAllPending();
     Serial.printf("AppController: %u pending notification(s) in the queue\n",
                   static_cast<unsigned>(pendingNotifications.size()));
+    for (const auto& notification : pendingNotifications) logRestoredAlert(notification);
 
     // AP + STA: host config portal while maintaining Wi-Fi uplink.
     WiFi.setHostname(HOSTNAME);  // Must precede WiFi.mode() to apply to the STA interface
@@ -115,6 +116,9 @@ bool AppController::setup() {
     webPortal.setOnDiscardPending([this](const String& mac) { discardPendingPairing(mac); });
     webPortal.setOnSaveDevice([this](const PeerNode& peer) { return saveDevice(peer); });
     webPortal.setWifiWrongPasswordProvider([this] { return wifiWrongPassword; });
+    webPortal.setListAlerts([this] { return alertLog.entries(); });
+    webPortal.setOnDismissAlert([this](const String& id) { return alertLog.remove(id); });
+    webPortal.setOnClearAlerts([this] { alertLog.clear(); });
     webPortal.begin();
 
     // Detect authentication failures to avoid repeated retries with invalid credentials.
@@ -350,6 +354,26 @@ void AppController::maintainWifi() {
     }
 }
 
+// An alert still in the queue after a reboot: shown again on the page, with the chats
+// it still has to reach. Its time is the queued timestamp only if that looks like a
+// real date (it counts from boot when the clock was not synced).
+void AppController::logRestoredAlert(const Notification& notification) {
+    constexpr uint32_t MIN_VALID_EPOCH = 1700000000;  // 2023-11-14
+
+    AlertLog::Entry entry;
+    entry.id = notification.getEventId();
+    entry.mac = notification.getOriginMac();
+    const PeerNode* peer = config.findPeerByMac(notification.getOriginMac());
+    entry.name = (peer != nullptr && !peer->getAlias().isEmpty()) ? peer->getAlias() : notification.getOriginMac();
+    entry.receivedAtEpoch = notification.getTimestamp() >= MIN_VALID_EPOCH ? notification.getTimestamp() : 0;
+    for (const auto& chatId : notification.getPendingChatIds()) {
+        AlertLog::Chat chat;
+        chat.chatId = chatId;
+        entry.chats.push_back(chat);
+    }
+    alertLog.add(std::move(entry));
+}
+
 std::vector<Notification>::iterator AppController::findPending(const String& eventId) {
     for (auto it = pendingNotifications.begin(); it != pendingNotifications.end(); ++it) {
         if (it->getEventId() == eventId) return it;
@@ -363,22 +387,38 @@ bool AppController::enqueueAlert(const String& originMac) {
         Serial.printf("AppController: alert ignored, unknown MAC %s\n", originMac.c_str());
         return false;
     }
-    if (peer->getChatIds().empty()) {
-        Serial.printf("AppController: alert ignored, %s has no recipients\n", originMac.c_str());
-        return false;
-    }
-
     const time_t now = time(nullptr);
     const String displayName = peer->getAlias().isEmpty() ? peer->getMacAddress() : peer->getAlias();
-    const String message = formatAlertMessage(peer->getMessage(), displayName, now, isClockValid());
 
-    // Ensure unique event ID even without synced clock.
+    // Ensure unique event ID even without synced clock (also against the page's log,
+    // whose entries outlive the queue).
     uint32_t timestamp = static_cast<uint32_t>(now);
     String eventId = Notification::makeEventId(peer->getMacAddress(), timestamp);
-    while (findPending(eventId) != pendingNotifications.end()) {
+    while (findPending(eventId) != pendingNotifications.end() || alertLog.contains(eventId)) {
         eventId = Notification::makeEventId(peer->getMacAddress(), ++timestamp);
     }
 
+    AlertLog::Entry entry;
+    entry.id = eventId;
+    entry.mac = peer->getMacAddress();
+    entry.name = displayName;
+    entry.receivedAtEpoch = isClockValid() ? static_cast<uint32_t>(now) : 0;
+
+    if (peer->getChatIds().empty()) {
+        Serial.printf("AppController: alert ignored, %s has no recipients\n", originMac.c_str());
+        entry.outcome = AlertLog::Outcome::NoRecipients;
+        alertLog.add(std::move(entry));
+        return false;
+    }
+
+    for (const auto& chatId : peer->getChatIds()) {
+        AlertLog::Chat chat;
+        chat.chatId = chatId;
+        entry.chats.push_back(chat);
+    }
+    alertLog.add(std::move(entry));
+
+    const String message = formatAlertMessage(peer->getMessage(), displayName, now, isClockValid());
     Notification notification(eventId, timestamp, peer->getMacAddress(), message,
                               peer->getChatIds());
 
@@ -425,12 +465,17 @@ void AppController::collectFinishedSends() {
             Serial.printf("AppController: %s sent to chat %s\n",
                           task.getEventId().c_str(), task.getChatId().c_str());
             markChatAsSent(task.getEventId(), task.getChatId());
+            // The clock is synced here: dispatchPendingSends() only sends with a valid one.
+            alertLog.setChatStatus(task.getEventId(), task.getChatId(), AlertLog::ChatStatus::Sent, status,
+                                   static_cast<uint32_t>(time(nullptr)));
             retryDelayMs = 0;
         } else if (isPermanentRejection(status)) {
             Serial.printf("AppController: Telegram rejected chat %s (HTTP %d); dropping it\n",
                           task.getChatId().c_str(), status);
             markChatAsSent(task.getEventId(), task.getChatId());
+            alertLog.setChatStatus(task.getEventId(), task.getChatId(), AlertLog::ChatStatus::Rejected, status);
         } else {
+            alertLog.setChatStatus(task.getEventId(), task.getChatId(), AlertLog::ChatStatus::Retrying, status);
             retryDelayMs = (retryDelayMs == 0) ? RETRY_INITIAL_MS
                                                : min(retryDelayMs * 2, RETRY_MAX_MS);
             lastFailureMs = millis();
@@ -542,8 +587,16 @@ void AppController::handlePairConfirm(const String& mac, uint16_t seq) {
 
 void AppController::handleAlert(const String& mac, uint16_t seq) {
     if (config.findPeerByMac(mac) == nullptr) {
-        // Not acknowledged: the belt must not believe an alert we dropped was delivered.
-        Serial.printf("AppController: alert from unregistered MAC %s ignored\n", mac.c_str());
+        // The frame passed the magic/type/size check, so it is one of our belts, just not
+        // registered here (e.g. paired to another master, or removed by mistake): the
+        // page shows it so the caregiver can notice. No Telegram send (no recipients),
+        // and not acknowledged, so the belt reports the alert as failed. Its resends
+        // (same seq) are listed once.
+        if (isNewAlert(mac, seq)) {
+            Serial.printf("AppController: alert from unregistered belt %s; shown on the page, not sent\n",
+                          mac.c_str());
+            logUnknownBeltAlert(mac);
+        }
         return;
     }
 
@@ -563,8 +616,25 @@ bool AppController::isNewAlert(const String& mac, uint16_t seq) {
             return true;
         }
     }
+    // Bounded: unregistered belts land here too.
+    if (lastAlerts.size() >= MAX_TRACKED_BELTS) lastAlerts.erase(lastAlerts.begin());
     lastAlerts.push_back({mac, seq});
     return true;
+}
+
+void AppController::logUnknownBeltAlert(const String& mac) {
+    const time_t now = time(nullptr);
+    uint32_t timestamp = static_cast<uint32_t>(now);
+    String id = Notification::makeEventId(mac, timestamp);
+    while (alertLog.contains(id)) id = Notification::makeEventId(mac, ++timestamp);
+
+    AlertLog::Entry entry;
+    entry.id = id;
+    entry.mac = mac;
+    entry.name = mac;
+    entry.receivedAtEpoch = isClockValid() ? static_cast<uint32_t>(now) : 0;
+    entry.outcome = AlertLog::Outcome::UnknownBelt;
+    alertLog.add(std::move(entry));
 }
 
 SaveDeviceResult AppController::saveDevice(const PeerNode& peer) {

@@ -96,6 +96,30 @@ h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
   border-radius: 999px;
 }
 
+/* Alerts */
+
+.panel-alerts { border-left-color: var(--rust); }
+.panel-alerts .alert-icon { color: var(--rust); flex: none; }
+.count-alert { color: var(--rust); background: var(--rust-tint); }
+.panel-alerts .btn-sm { margin-left: 8px; }
+.btn-sm { min-height: 32px; padding: 4px 10px; font-size: 0.8125rem; }
+
+.alert-status { font-size: 0.875rem; font-weight: 600; margin: 6px 0 0; }
+.alert-status.is-ok { color: var(--pine); }
+.alert-status.is-wait { color: var(--ochre); }
+.alert-status.is-bad { color: var(--rust); }
+.alert-chats { margin: 4px 0 0; padding: 0; list-style: none; font-size: 0.8125rem; color: var(--ink-soft); }
+.alert-chats li { overflow-wrap: anywhere; }
+
+@keyframes arrive-alert {
+  from { background: var(--rust-tint); }
+  to   { background: transparent; }
+}
+.rows > li.just-alerted { animation: arrive-alert 3s ease-out 1; }
+@media (prefers-reduced-motion: reduce) {
+  .rows > li.just-alerted { animation: none; }
+}
+
 /* Rows */
 
 .rows { list-style: none; margin: 0; padding: 0; }

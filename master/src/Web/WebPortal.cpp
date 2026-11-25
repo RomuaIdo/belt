@@ -53,6 +53,39 @@ String toIso8601Utc(time_t epoch) {
     strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
     return String(buf);
 }
+
+const char* chatStatusCode(AlertLog::ChatStatus status) {
+    switch (status) {
+        case AlertLog::ChatStatus::Sent: return "enviado";
+        case AlertLog::ChatStatus::Rejected: return "recusado";
+        case AlertLog::ChatStatus::Retrying: return "tentando_novamente";
+        case AlertLog::ChatStatus::Sending:
+        default: return "enviando";
+    }
+}
+
+// Overall status of an alert, from its chats.
+const char* alertStatusCode(const AlertLog::Entry& entry) {
+    if (entry.outcome == AlertLog::Outcome::NoRecipients) return "sem_destinatarios";
+    if (entry.outcome == AlertLog::Outcome::UnknownBelt) return "cinto_nao_cadastrado";
+    bool retrying = false, sending = false, sent = false;
+    for (const auto& chat : entry.chats) {
+        switch (chat.status) {
+            case AlertLog::ChatStatus::Retrying: retrying = true; break;
+            case AlertLog::ChatStatus::Sending: sending = true; break;
+            case AlertLog::ChatStatus::Sent: sent = true; break;
+            default: break;
+        }
+    }
+    if (retrying) return "tentando_novamente";
+    if (sending) return "enviando";
+    bool allSent = true;
+    for (const auto& chat : entry.chats) {
+        if (chat.status != AlertLog::ChatStatus::Sent) allSent = false;
+    }
+    if (allSent) return "enviado";
+    return sent ? "parcial" : "falhou";  // some or all chats rejected for good
+}
 }
 
 WebPortal::WebPortal(SystemConfig& config, ConfigStorage& configStorage,
@@ -81,6 +114,9 @@ void WebPortal::begin() {
 
     server.on("/api/pendentes", HTTP_GET, [this] { handlePendingList(); });
     server.on(UriBraces("/api/pendentes/{}"), HTTP_DELETE, [this] { handlePendingDelete(); });
+    server.on("/api/alertas", HTTP_GET, [this] { handleAlertsList(); });
+    server.on("/api/alertas", HTTP_DELETE, [this] { handleAlertsClear(); });
+    server.on(UriBraces("/api/alertas/{}"), HTTP_DELETE, [this] { handleAlertDelete(); });
 
     server.onNotFound([this] { sendError(404, "nao_encontrado", "Not found."); });
 
@@ -503,6 +539,55 @@ void WebPortal::handlePendingList() {
 void WebPortal::handlePendingDelete() {
     const String mac = server.urlDecode(server.pathArg(0));
     if (onDiscardPending) onDiscardPending(mac);
+
+    JsonDocument doc;
+    doc["ok"] = true;
+    sendJson(200, doc);
+}
+
+// Every alert received since boot (up to AlertLog::CAPACITY), newest first, with
+// how its Telegram sends went.
+void WebPortal::handleAlertsList() {
+    JsonDocument doc;
+    JsonArray arr = doc["alertas"].to<JsonArray>();
+    if (listAlerts) {
+        const std::vector<AlertLog::Entry> entries = listAlerts();
+        for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+            JsonObject item = arr.add<JsonObject>();
+            item["id"] = it->id;
+            item["mac"] = it->mac;
+            item["nome"] = it->name;
+            // Empty when the clock was not synced: the page shows when it first saw it.
+            item["recebido_em"] = it->receivedAtEpoch == 0
+                                      ? String()
+                                      : toIso8601Utc(static_cast<time_t>(it->receivedAtEpoch));
+            item["situacao"] = alertStatusCode(*it);
+            JsonArray chats = item["conversas"].to<JsonArray>();
+            for (const auto& chat : it->chats) {
+                JsonObject c = chats.add<JsonObject>();
+                c["chat_id"] = chat.chatId;
+                c["situacao"] = chatStatusCode(chat.status);
+                c["http"] = chat.httpStatus;
+                c["entregue_em"] = chat.deliveredAtEpoch == 0
+                                       ? String()
+                                       : toIso8601Utc(static_cast<time_t>(chat.deliveredAtEpoch));
+            }
+        }
+    }
+    sendJson(200, doc);
+}
+
+void WebPortal::handleAlertDelete() {
+    const String id = server.urlDecode(server.pathArg(0));
+    if (onDismissAlert) onDismissAlert(id);  // already gone (another viewer) is fine
+
+    JsonDocument doc;
+    doc["ok"] = true;
+    sendJson(200, doc);
+}
+
+void WebPortal::handleAlertsClear() {
+    if (onClearAlerts) onClearAlerts();
 
     JsonDocument doc;
     doc["ok"] = true;

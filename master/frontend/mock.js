@@ -30,6 +30,56 @@ const conversas = [
   { chat_id: '-1001445588', nome: 'Family group' },
 ];
 
+// Alerts received (oldest first). Maria's belt raises a new one every 30 s; each
+// is "sending" for 6 s, then delivered. Older ones cover the other outcomes.
+const MOCK_START = Date.now();
+let nextMockAlert = 1;
+let alertas = [
+  { id: 'A0B7652C1DE4-1', mac: 'A0:B7:65:2C:1D:E4', nome: 'Maria Aparecida', at: MOCK_START - 50 * 60 * 1000,
+    conversas: [{ chat_id: '987654321', situacao: 'enviado', http: 200 },
+                { chat_id: '-1001445588', situacao: 'recusado', http: 403 }] },
+  { id: 'A0B7652C1DE4-2', mac: 'A0:B7:65:2C:1D:E4', nome: 'Maria Aparecida', at: MOCK_START - 12 * 60 * 1000,
+    conversas: [{ chat_id: '987654321', situacao: 'enviado', http: 200 }] },
+  { id: 'C8F09E1122AB-1', mac: 'C8:F0:9E:11:22:AB', nome: 'José Carlos', at: MOCK_START - 2 * 60 * 1000,
+    conversas: [{ chat_id: '123456789', situacao: 'tentando_novamente', http: -1 }] },
+  { id: 'D4E5F6070809-1', mac: 'D4:E5:F6:07:08:09', nome: 'D4:E5:F6:07:08:09', at: MOCK_START - 60 * 1000,
+    naoCadastrado: true, conversas: [] },
+];
+// Delivered a few seconds after arriving.
+for (const a of alertas) {
+  for (const c of a.conversas) if (c.situacao === 'enviado') c.entregue_em = new Date(a.at + 4000).toISOString();
+}
+
+function mockAlertStatus(a) {
+  if (a.naoCadastrado) return 'cinto_nao_cadastrado';
+  if (!a.conversas.length) return 'sem_destinatarios';
+  const st = a.conversas.map((c) => c.situacao);
+  if (st.includes('tentando_novamente')) return 'tentando_novamente';
+  if (st.includes('enviando')) return 'enviando';
+  if (st.every((s) => s === 'enviado')) return 'enviado';
+  return st.includes('enviado') ? 'parcial' : 'falhou';
+}
+
+function tickMockAlerts() {
+  const now = Date.now();
+  if (now - MOCK_START >= nextMockAlert * 30000) {
+    alertas.push({ id: `A0B7652C1DE4-n${nextMockAlert}`, mac: 'A0:B7:65:2C:1D:E4', nome: 'Maria Aparecida',
+      at: now, conversas: [{ chat_id: '987654321', situacao: 'enviando', http: 0 }] });
+    nextMockAlert++;
+  }
+  for (const a of alertas) {
+    if (now - a.at > 6000) {
+      for (const c of a.conversas) {
+        if (c.situacao === 'enviando') {
+          c.situacao = 'enviado';
+          c.http = 200;
+          c.entregue_em = new Date(now).toISOString();
+        }
+      }
+    }
+  }
+}
+
 function delay(value) {
   return new Promise((resolve) => setTimeout(() => resolve(value), LATENCY));
 }
@@ -176,6 +226,28 @@ export function mockApi(method, path, body) {
   if (method === 'DELETE' && path.startsWith('/api/pendentes/')) {
     const mac = macFromPath(path, '/api/pendentes/');
     pendentes = pendentes.filter((p) => p.mac !== mac);
+    return delay({ ok: true });
+  }
+
+  // GET /api/alertas — newest first
+  if (method === 'GET' && path === '/api/alertas') {
+    tickMockAlerts();
+    return delay({
+      alertas: alertas.slice().reverse().map((a) => ({
+        id: a.id, mac: a.mac, nome: a.nome, recebido_em: new Date(a.at).toISOString(),
+        situacao: mockAlertStatus(a), conversas: a.conversas.map((c) => ({ ...c })),
+      })),
+    });
+  }
+
+  // DELETE /api/alertas (all) and /api/alertas/{id}
+  if (method === 'DELETE' && path === '/api/alertas') {
+    alertas = [];
+    return delay({ ok: true });
+  }
+  if (method === 'DELETE' && path.startsWith('/api/alertas/')) {
+    const id = decodeURIComponent(path.slice('/api/alertas/'.length));
+    alertas = alertas.filter((a) => a.id !== id);
     return delay({ ok: true });
   }
 

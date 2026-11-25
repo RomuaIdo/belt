@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 
+#include "Domain/AlertLog.h"
 #include "Domain/Notification.h"
 #include "Domain/PendingPairing.h"
 #include "Domain/PendingPairingList.h"
@@ -39,6 +40,7 @@ public:
 
 private:
     static constexpr size_t MAX_PARALLEL_SENDS = 2;
+    static constexpr size_t MAX_TRACKED_BELTS = 32;  // lastAlerts entries (registered or not)
     static constexpr uint8_t STATUS_LED_PIN = 48;  // Onboard RGB LED on DevKitC-1 v1.0 (v1.1 uses 38)
 
     // Wi-Fi: scan for the saved network, connect only when it is nearby, and
@@ -58,6 +60,7 @@ private:
     bool isSending(const String& eventId, const String& chatId) const;
     void markChatAsSent(const String& eventId, const String& chatId);
     std::vector<Notification>::iterator findPending(const String& eventId);
+    void logRestoredAlert(const Notification& notification);
 
     // ESP-NOW frames. The radio callback only queues them; they are handled here,
     // oldest first, on the loop() task.
@@ -67,6 +70,7 @@ private:
     void handlePairConfirm(const String& mac, uint16_t seq);
     void handleAlert(const String& mac, uint16_t seq);
     bool isNewAlert(const String& mac, uint16_t seq);
+    void logUnknownBeltAlert(const String& mac);
     void sendMessage(const String& mac, Protocol::MessageType type, uint16_t seq);
     void sendPairAccept(const String& mac, uint16_t seq);
 
@@ -92,6 +96,9 @@ private:
 
     // RAM mirror of the queue persisted on flash.
     std::vector<Notification> pendingNotifications;
+
+    // Recent alerts and their Telegram status, shown on the config page (RAM only).
+    AlertLog alertLog;
 
     // Fixed array: each task keeps its own address, so it must not move.
     TelegramTask telegramTasks[MAX_PARALLEL_SENDS];
