@@ -89,9 +89,12 @@ no pairing is running, no alert is waiting for its ack, and both buttons are rel
 
 **Battery.** The LiPo (3.7 V, 4.2 V full, 500 mAh) goes through a 1:2 divider into GPIO 8
 (ADC1, works with the radio on). `BatteryMonitor` averages 16 ADC readings at boot, every
-30 min, on every button click (before the radio sends) and on every confirmed fall. Below
-3.5 V the belt enters `BatteryLow` and beeps three times (200 ms on / 200 ms off) on every
-low reading; it leaves the state only above 3.65 V. `BatteryLow` is quiet, so the belt keeps
+30 min, on a pairing or alert click (before the radio sends; not on a click that cancels a
+fall, while the motor runs) and on every confirmed fall. Below 3.5 V the belt enters
+`BatteryLow` and beeps three times (200 ms on / 200 ms off) on every low reading; the beeps
+wait until the belt is idle (no fall countdown, no alert waiting for its ack, no other
+event playing), so they never cover the countdown or follow a cancel. It leaves the state
+only above 3.65 V. `BatteryLow` is quiet, so the belt keeps
 sleeping. Thresholds and interval are in `AppConfig` (`kBattery*`). Every reading is logged
 with an estimated charge from a LiPo discharge curve (`BatteryMonitor::percentFromMv`), for
 example `AppController: battery 3.91 V, 68%`, or `... LOW` while the battery is low.
@@ -127,7 +130,7 @@ nothing and `isIdle()` returns true (the same in `BatteryLow`, which has no feed
 | `AlertFailed` | Three beeps and red LED blinks (no `AlertAck` after every retry) |
 | `FallCancelled` | One 400 ms green LED pulse |
 | `BootFault` | LED blinks red three times (radio or IMU failed to start) |
-| `BatteryLow` | Three 200 ms beeps, 200 ms apart (on every low battery reading) |
+| `BatteryLow` | Three 200 ms beeps, 200 ms apart (on every low battery reading, once the belt is idle) |
 
 State priority is fall countdown, then alert, then pairing, then battery low, then idle. Every transition is
 logged on the serial monitor, for example `StateHandler: Idle -> PairingSearching`.

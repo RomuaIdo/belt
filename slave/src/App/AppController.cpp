@@ -90,12 +90,13 @@ void AppController::loop() {
     }
 
     if (alertButton.update(digitalRead(AppConfig::kAlertButtonPin), millis())) {
-        checkBattery();
         if (fallService.cancel()) {
+            // No reading here: the motor and buzzer of the countdown are still on.
             Serial.println("AppController: fall cancelled by the wearer, no alert sent");
             stateHandler.notify(SystemEvent::FallCancelled, millis());
         } else {
             Serial.println("AppController: alert button pressed");
+            checkBattery();  // before the radio starts sending
             sendAlert();
         }
     }
@@ -134,6 +135,7 @@ void AppController::loop() {
         stateHandler.notify(SystemEvent::PairingTimedOut, millis());
     }
 
+    announceBatteryLow();
     stateHandler.update(snapshot(), millis());
     maybeSleep();
 }
@@ -184,7 +186,18 @@ void AppController::checkBattery() {
     const bool low = battery.measure();
     Serial.printf("AppController: battery %.2f V, %u%%%s\n", battery.lastBatteryMv() / 1000.0f,
                   static_cast<unsigned>(battery.lastPercent()), low ? " LOW" : "");
-    if (low) stateHandler.notify(SystemEvent::BatteryLow, millis());
+    if (low) batteryLowToAnnounce = true;  // played by announceBatteryLow() once idle
+}
+
+// Plays the BatteryLow beeps only when nothing else is going on: over a fall
+// countdown they would cover its buzzer, and right after a cancel they would sound
+// like the cancel failed.
+void AppController::announceBatteryLow() {
+    if (!batteryLowToAnnounce) return;
+    const uint32_t now = millis();
+    if (fallService.isCountingDown() || alertPending || !stateHandler.isIdle(now)) return;
+    batteryLowToAnnounce = false;
+    stateHandler.notify(SystemEvent::BatteryLow, now);
 }
 
 void AppController::startPairing() {

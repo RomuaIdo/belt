@@ -45,9 +45,12 @@
 // FIFO read when moving. Either button also wakes it.
 //
 // Battery: read through the divider on GPIO8 at boot, every kBatteryReadIntervalMs
-// (a light-sleep timer wakes the belt for it), on every button click and on every
-// confirmed fall. While it is low the state is BatteryLow (quiet, still sleeps) and
-// every low reading plays the BatteryLow event (3 beeps).
+// (a light-sleep timer wakes the belt for it), on the pairing button, on an alert
+// button click that sends an alert, and on every confirmed fall. While it is low the
+// state is BatteryLow (quiet, still sleeps) and every low reading plays the BatteryLow
+// event (3 beeps), held back until the belt is idle (no fall countdown, no alert
+// waiting for its ack, no other feedback playing), so it never sounds like a failed
+// cancel or covers the countdown.
 class AppController {
 public:
     AppController();
@@ -70,6 +73,7 @@ private:
     void handleAlertAck(const String& sender, uint16_t seq);
     void maybeSleep();
     void checkBattery();
+    void announceBatteryLow();
     SystemSnapshot snapshot() const;
 
     MasterLinkStorage masterLinkStorage;
@@ -90,6 +94,7 @@ private:
     bool imuActive = false;        // moving: the FIFO is being read
     uint32_t lastImuReadMs = 0;    // last FIFO read
     uint32_t lastMotionMs = 0;     // last any-motion seen
+    bool batteryLowToAnnounce = false;  // low reading whose beeps wait for the belt to be idle
 
     bool alertPending = false;     // Alert sent, no AlertAck yet
     uint16_t alertSeq = 0;         // seq of the pending Alert (resends reuse it)
