@@ -45,9 +45,13 @@ Header-only utilities do not require a `.cpp` file.
   5xx/429 HTTP statuses retry with backoff from 5 s to 5 min; HTTP 400/403 drops that chat.
 
 **Wi-Fi.** The master scans for the saved network and connects only when it is nearby
-(re-scanning every 30 s while disconnected). A few quick retries absorb flaky
-disconnects; a rejected password stops the retries until the credentials change, and the
-page reports it. The page can also forget the saved network. On the home network the page
+(re-scanning every 30 s while disconnected). A hidden network is not listed by name, so
+if the scan finds any hidden network the master tries the saved one anyway. A few quick
+retries absorb flaky disconnects, and an attempt with no answer in 20 s is dropped. A
+password the router rejects, or 3 handshake timeouts in a row (a single one also happens
+with the right password, e.g. while the router reboots), counts as a wrong password: the
+page reports it and the master retries only every 5 min until the credentials change.
+The page can also forget the saved network. On the home network the page
 is at <http://cintoalerta.local> (mDNS) or at the IP shown on the serial monitor.
 
 **Status LED** (onboard RGB, GPIO 48 on DevKitC-1 v1.0): dim red when disconnected,
@@ -130,7 +134,7 @@ Available test suites:
 | `test_pending_pairing_list` | Belts waiting to be set up, expiry, and capacity |
 | `test_pairing_service` | Wait for the belt's `PairConfirm` and its timeout |
 | `test_protocol` | Frame building and parsing |
-| `test_wifi_policy` | Wi-Fi disconnect reason classification |
+| `test_wifi_policy` | Wi-Fi disconnect reason classification and wrong-password detection |
 | `test_status_led` | LED breathing curve |
 | `test_config_storage` | Configuration persistence across a reboot (writes to flash) |
 | `test_call_queue_storage` | Alert queue persistence across a reboot, with power-loss simulation |

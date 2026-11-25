@@ -10,6 +10,7 @@
 #include "Messaging/TelegramTask.h"
 #include "Network/EspNowTransceiver.h"
 #include "Network/PairingService.h"
+#include "Network/WifiPolicy.h"
 #include "Protocol/Message.h"
 #include "Storage/CallQueueStorage.h"
 #include "Storage/ConfigStorage.h"
@@ -49,6 +50,7 @@ private:
     void startWifiScan();
     void checkWifiScanResult();
     void onWifiStaDisconnected(uint8_t reason);
+    void onWifiAttemptFailed(uint8_t reason);
     StatusLed::State wifiLedState() const;
 
     void collectFinishedSends();
@@ -116,7 +118,10 @@ private:
     uint32_t wifiScanStartedMs = 0;
     bool wifiScanRunning = false;
     bool wifiConnecting = false;
-    bool wifiWrongPassword = false;      // No retries until the Wi-Fi settings change
+    uint32_t wifiConnectStartedMs = 0;   // For dropping an attempt that never reports back
+    bool wifiWrongPassword = false;      // Only a slow retry until the Wi-Fi settings change
+    uint32_t wifiWrongPasswordAtMs = 0;
+    WifiFailureTracker wifiFailures;     // Decides when failed attempts mean a wrong password
     uint8_t wifiQuickRetries = 0;        // Non-password failures since the last scan hit
     uint32_t wifiRetryAtMs = 0;          // 0 = no quick retry pending
     bool wifiWaitingForNetwork = false;  // Only the periodic scan is left (LED shows disconnected)
