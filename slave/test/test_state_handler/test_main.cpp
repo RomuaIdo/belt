@@ -201,6 +201,32 @@ void test_event_plays_then_ends_on_its_own() {
     TEST_ASSERT_TRUE(handler.isIdle(1400));
 }
 
+// The stuck-motor bug: AlertSent's vibration is one 400 ms ON with no OFF phase, so
+// at 400 ms it is over by the clock while the pin is still high. It must not count
+// as idle (the belt would light-sleep with the motor on) until a render turns it off.
+void test_event_ending_on_its_on_phase_is_not_idle_until_rendered() {
+    StateHandler handler = makeHandler();
+
+    handler.notify(SystemEvent::AlertSent, 0);  // vibration 400/0/1
+    handler.update(snap(Pairing::Idle), 399);
+    TEST_ASSERT_TRUE(handler.vibrationIsOn());
+
+    TEST_ASSERT_FALSE(handler.isIdle(400));     // finished, but the motor is still on
+    handler.update(snap(Pairing::Idle), 400);
+    TEST_ASSERT_FALSE(handler.vibrationIsOn());
+    TEST_ASSERT_TRUE(handler.isIdle(400));
+}
+
+void test_prepare_for_sleep_turns_every_output_off() {
+    StateHandler handler = makeHandler();
+
+    handler.update(snap(Pairing::Idle, Fall::Countdown), 0);  // every output on
+    handler.prepareForSleep();
+    TEST_ASSERT_FALSE(handler.ledIsOn());
+    TEST_ASSERT_FALSE(handler.buzzerIsOn());
+    TEST_ASSERT_FALSE(handler.vibrationIsOn());
+}
+
 void test_event_does_not_touch_outputs_it_does_not_use() {
     StateHandler handler = makeHandler();
 
@@ -236,6 +262,8 @@ void setup() {
     RUN_TEST(test_fall_countdown_keeps_going_until_it_ends);
     RUN_TEST(test_fall_cancelled_flashes_green_then_goes_idle);
     RUN_TEST(test_event_plays_then_ends_on_its_own);
+    RUN_TEST(test_event_ending_on_its_on_phase_is_not_idle_until_rendered);
+    RUN_TEST(test_prepare_for_sleep_turns_every_output_off);
     RUN_TEST(test_event_does_not_touch_outputs_it_does_not_use);
     RUN_TEST(test_output_returns_to_the_state_after_an_event);
     UNITY_END();

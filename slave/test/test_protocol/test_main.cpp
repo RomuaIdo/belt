@@ -19,7 +19,7 @@ size_t headerOnlyFrame(MessageType type, uint16_t seq) {
 
 void test_header_is_seven_bytes() {
     TEST_ASSERT_EQUAL_UINT32(7, kHeaderSize);
-    TEST_ASSERT_EQUAL_UINT32(8, kMaxFrameSize);
+    TEST_ASSERT_EQUAL_UINT32(10, kMaxFrameSize);
 }
 
 void test_wire_bytes_are_stable() {
@@ -59,6 +59,31 @@ void test_pair_accept_carries_the_channel() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MessageType::PairAccept), static_cast<uint8_t>(header.type));
     TEST_ASSERT_EQUAL_UINT16(7, header.seq);
     TEST_ASSERT_EQUAL_UINT8(11, buffer[kPairAcceptChannelOffset]);
+}
+
+void test_battery_status_carries_percent_and_mv() {
+    const size_t size = buildBatteryStatus(buffer, sizeof(buffer), 9, 72, 3890);
+    TEST_ASSERT_EQUAL_UINT32(kHeaderSize + 3, size);
+    // 3890 mV = 0x0F32, little-endian on the wire.
+    const uint8_t expected[] = {0x54, 0x4C, 0x45, 0x42, 0x20, 0x09, 0x00, 72, 0x32, 0x0F};
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, buffer, sizeof(expected));
+
+    Header header;
+    TEST_ASSERT_TRUE(parseFrame(buffer, static_cast<int>(size), header));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MessageType::BatteryStatus), static_cast<uint8_t>(header.type));
+    uint8_t percent = 0;
+    uint16_t mv = 0;
+    parseBatteryStatus(buffer, percent, mv);
+    TEST_ASSERT_EQUAL_UINT8(72, percent);
+    TEST_ASSERT_EQUAL_UINT16(3890, mv);
+}
+
+void test_battery_status_with_the_wrong_size_is_rejected() {
+    const size_t size = buildBatteryStatus(buffer, sizeof(buffer), 1, 50, 3700);
+    Header header;
+    TEST_ASSERT_FALSE(parseFrame(buffer, static_cast<int>(size) - 1, header));
+    TEST_ASSERT_FALSE(parseFrame(buffer, static_cast<int>(size) + 1, header));
+    TEST_ASSERT_EQUAL_UINT32(0, buildBatteryStatus(buffer, kBatteryStatusSize - 1, 1, 50, 3700));
 }
 
 void test_builders_refuse_a_too_small_buffer() {
@@ -132,6 +157,8 @@ void setup() {
     RUN_TEST(test_wire_bytes_are_stable);
     RUN_TEST(test_header_only_frames_round_trip);
     RUN_TEST(test_pair_accept_carries_the_channel);
+    RUN_TEST(test_battery_status_carries_percent_and_mv);
+    RUN_TEST(test_battery_status_with_the_wrong_size_is_rejected);
     RUN_TEST(test_builders_refuse_a_too_small_buffer);
     RUN_TEST(test_parse_accepts_misaligned_data);
     RUN_TEST(test_parse_rejects_wrong_magic);

@@ -119,6 +119,7 @@ bool AppController::setup() {
     webPortal.setListAlerts([this] { return alertLog.entries(); });
     webPortal.setOnDismissAlert([this](const String& id) { return alertLog.remove(id); });
     webPortal.setOnClearAlerts([this] { alertLog.clear(); });
+    webPortal.setBatteryProvider([this](const String& mac, BatteryReading& out) { return batteryOf(mac, out); });
     webPortal.begin();
 
     // Detect authentication failures to avoid repeated retries with invalid credentials.
@@ -541,6 +542,9 @@ void AppController::processFrame(const RadioFrame& frame) {
         case Protocol::MessageType::Alert:
             handleAlert(mac, header.seq);
             break;
+        case Protocol::MessageType::BatteryStatus:
+            handleBatteryStatus(mac, frame);
+            break;
         default:
             // PairWait, PairAccept and AlertAck are sent by the master, never to it.
             Serial.printf("AppController: unexpected message type 0x%02X from %s dropped\n",
@@ -620,6 +624,37 @@ bool AppController::isNewAlert(const String& mac, uint16_t seq) {
     if (lastAlerts.size() >= MAX_TRACKED_BELTS) lastAlerts.erase(lastAlerts.begin());
     lastAlerts.push_back({mac, seq});
     return true;
+}
+
+// Keeps only the latest reading of each registered belt; no ack (the next one replaces it).
+void AppController::handleBatteryStatus(const String& mac, const RadioFrame& frame) {
+    if (config.findPeerByMac(mac) == nullptr) return;  // not one of ours
+
+    BatteryReading reading;
+    reading.mac = mac;
+    Protocol::parseBatteryStatus(frame.data, reading.percent, reading.mv);
+    reading.receivedAtMs = millis();
+    Serial.printf("AppController: belt %s battery %u%% (%u mV)\n", mac.c_str(),
+                  static_cast<unsigned>(reading.percent), static_cast<unsigned>(reading.mv));
+
+    for (auto& stored : batteryReadings) {
+        if (MacUtils::equal(stored.mac, mac)) {
+            stored = reading;
+            return;
+        }
+    }
+    if (batteryReadings.size() >= MAX_TRACKED_BELTS) batteryReadings.erase(batteryReadings.begin());
+    batteryReadings.push_back(reading);
+}
+
+bool AppController::batteryOf(const String& mac, BatteryReading& out) const {
+    for (const auto& stored : batteryReadings) {
+        if (MacUtils::equal(stored.mac, mac)) {
+            out = stored;
+            return true;
+        }
+    }
+    return false;
 }
 
 void AppController::logUnknownBeltAlert(const String& mac) {

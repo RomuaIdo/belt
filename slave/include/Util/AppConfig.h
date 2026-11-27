@@ -61,8 +61,13 @@ constexpr uint8_t kBatteryAdcSamples = 16;    // averaged to filter the ADC nois
 
 // Feedback
 constexpr unsigned int kBuzzerFreqHz = 2700;
+constexpr uint8_t kBuzzerLedcChannel = 0;
+constexpr uint8_t kBuzzerLedcResolutionBits = 8;
 
 // Radio
+// No light sleep this soon after a send: suspending Wi-Fi drops a frame that is
+// still queued, and the BatteryStatus has no ack to keep the belt awake.
+constexpr uint32_t kRadioSendSettleMs = 30;
 constexpr uint8_t kPairingMinChannel = 1;
 constexpr uint8_t kPairingMaxChannel = 13;
 

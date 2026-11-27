@@ -20,6 +20,14 @@ enum class SaveDeviceResult {
     StorageError,    // could not write config.json
 };
 
+// Last battery reading a belt sent (RAM only, gone on reboot).
+struct BatteryReading {
+    String mac;
+    uint8_t percent = 0;
+    uint16_t mv = 0;
+    uint32_t receivedAtMs = 0;  // millis() when it arrived
+};
+
 // Web portal serving LittleFS configuration frontend and JSON API.
 class WebPortal {
 public:
@@ -32,6 +40,8 @@ public:
     using ClearAlertsCallback = std::function<void()>;
     // Saves a belt (executes handshake for new belts, saving on confirmation).
     using SaveDeviceCallback = std::function<SaveDeviceResult(const PeerNode& peer)>;
+    // Fills `out` with the belt's last battery reading; false if none arrived yet.
+    using BatteryProvider = std::function<bool(const String& mac, BatteryReading& out)>;
 
     // onWifiChanged callback triggered when credentials are saved or deleted.
     WebPortal(SystemConfig& config, ConfigStorage& configStorage,
@@ -47,6 +57,7 @@ public:
     void setListAlerts(AlertsProvider callback) { listAlerts = std::move(callback); }
     void setOnDismissAlert(DismissAlertCallback callback) { onDismissAlert = std::move(callback); }
     void setOnClearAlerts(ClearAlertsCallback callback) { onClearAlerts = std::move(callback); }
+    void setBatteryProvider(BatteryProvider callback) { batteryOf = std::move(callback); }
 
 private:
     void serveFile(const char* path, const char* contentType);
@@ -86,4 +97,5 @@ private:
     AlertsProvider listAlerts;
     DismissAlertCallback onDismissAlert;
     ClearAlertsCallback onClearAlerts;
+    BatteryProvider batteryOf;
 };

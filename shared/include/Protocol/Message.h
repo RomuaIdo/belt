@@ -20,6 +20,10 @@
 //
 // Alerts: belt -> master Alert; master -> belt AlertAck, echoing the Alert seq.
 // The belt resends an Alert with the same seq until it is acknowledged.
+//
+// Battery: belt -> master BatteryStatus after each battery reading (boot, periodic
+// timer, button, fall), carrying the charge in % and the voltage in mV. Not
+// acknowledged: the next reading replaces it.
 namespace Protocol {
 
 // Frame marker. It only filters out ESP-NOW traffic from other projects; it is
@@ -36,6 +40,7 @@ enum class MessageType : uint8_t {
     PairConfirm = 0x04,
     Alert = 0x10,
     AlertAck = 0x11,
+    BatteryStatus = 0x20,
 };
 
 #pragma pack(push, 1)
@@ -49,7 +54,11 @@ struct Header {
 constexpr size_t kHeaderSize = sizeof(Header);
 // PairAccept = Header + the master's Wi-Fi channel.
 constexpr size_t kPairAcceptChannelOffset = kHeaderSize;
-constexpr size_t kMaxFrameSize = kHeaderSize + 1;  // largest frame defined
+// BatteryStatus = Header + charge (uint8_t, %) + voltage (uint16_t, mV, little-endian).
+constexpr size_t kBatteryPercentOffset = kHeaderSize;
+constexpr size_t kBatteryMvOffset = kHeaderSize + 1;
+constexpr size_t kBatteryStatusSize = kHeaderSize + 3;
+constexpr size_t kMaxFrameSize = kBatteryStatusSize;  // largest frame defined
 
 // Exact size of each frame type; 0 for an unknown type.
 inline size_t expectedSize(MessageType type) {
@@ -62,6 +71,8 @@ inline size_t expectedSize(MessageType type) {
             return kHeaderSize;
         case MessageType::PairAccept:
             return kHeaderSize + 1;
+        case MessageType::BatteryStatus:
+            return kBatteryStatusSize;
     }
     return 0;
 }
@@ -94,6 +105,21 @@ inline size_t buildPairAccept(uint8_t* buffer, size_t capacity, uint16_t seq, ui
     buildFrame(buffer, capacity, MessageType::PairAccept, seq);
     buffer[kPairAcceptChannelOffset] = channel;
     return kHeaderSize + 1;
+}
+
+inline size_t buildBatteryStatus(uint8_t* buffer, size_t capacity, uint16_t seq, uint8_t percent,
+                                 uint16_t mv) {
+    if (capacity < kBatteryStatusSize) return 0;
+    buildFrame(buffer, capacity, MessageType::BatteryStatus, seq);
+    buffer[kBatteryPercentOffset] = percent;
+    memcpy(buffer + kBatteryMvOffset, &mv, sizeof(mv));  // memcpy: misaligned
+    return kBatteryStatusSize;
+}
+
+// Reads the payload of a frame parseFrame() already accepted as BatteryStatus.
+inline void parseBatteryStatus(const uint8_t* data, uint8_t& percent, uint16_t& mv) {
+    percent = data[kBatteryPercentOffset];
+    memcpy(&mv, data + kBatteryMvOffset, sizeof(mv));
 }
 
 }  // namespace Protocol

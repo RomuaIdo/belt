@@ -29,8 +29,13 @@ public:
 
     SystemState state() const { return current; }
 
-    // Quiet state (Idle, BatteryLow) and no event playing: nothing is happening.
+    // Quiet state (Idle, BatteryLow), no event playing and every output off:
+    // nothing is happening.
     bool isIdle(uint32_t nowMs) const;
+
+    // Right before light sleep: turns every output off and drives the buzzer and
+    // motor pins low, since a GPIO keeps its level while the chip sleeps.
+    void prepareForSleep();
 
     // What the outputs were last told (also kept for pins that are kNoPin).
     bool ledIsOn() const { return led.on; }

@@ -35,6 +35,10 @@ AppController::AppController()
               AppConfig::kBatteryRecoverMv, AppConfig::kBatteryReadIntervalMs, []() { return millis(); }) {}
 
 void AppController::setup() {
+    // First of all: the motor and buzzer transistors are driven straight from these
+    // pins, and a floating pin during the slower start-up below can switch them on.
+    stateHandler.begin();
+
     Serial.begin(115200);
 
     if (!LittleFS.begin(true)) {
@@ -48,7 +52,6 @@ void AppController::setup() {
 
     pinMode(AppConfig::kPairingButtonPin, INPUT_PULLUP);
     pinMode(AppConfig::kAlertButtonPin, INPUT_PULLUP);
-    stateHandler.begin();
 
     analogSetPinAttenuation(AppConfig::kBatteryAdcPin, ADC_11db);
     checkBattery();
@@ -126,6 +129,7 @@ void AppController::loop() {
     }
 
     processRadio();
+    reportBattery();
 
     pairingService.tick();
     if (pairingService.getState() == PairingService::State::TimedOut) {
@@ -187,6 +191,26 @@ void AppController::checkBattery() {
     Serial.printf("AppController: battery %.2f V, %u%%%s\n", battery.lastBatteryMv() / 1000.0f,
                   static_cast<unsigned>(battery.lastPercent()), low ? " LOW" : "");
     if (low) batteryLowToAnnounce = true;  // played by announceBatteryLow() once idle
+    batteryToReport = true;                // sent to the master by reportBattery()
+}
+
+// Sends the last reading to the paired master. Waits while pairing (the radio is on
+// another channel, or the master is about to change); dropped without a master.
+void AppController::reportBattery() {
+    if (!batteryToReport) return;
+    if (!radioReady || !masterLink.hasMac()) {
+        batteryToReport = false;
+        return;
+    }
+    if (pairingService.isActive()) return;
+
+    batteryToReport = false;
+    wakeRadio();
+    uint8_t frame[Protocol::kMaxFrameSize];
+    const size_t size = Protocol::buildBatteryStatus(frame, sizeof(frame), nextSeq++, battery.lastPercent(),
+                                                     static_cast<uint16_t>(battery.lastBatteryMv()));
+    espNow.send(masterLink.getMacAddress(), frame, size);
+    lastSendMs = millis();
 }
 
 // Plays the BatteryLow beeps only when nothing else is going on: over a fall
@@ -258,7 +282,11 @@ void AppController::maybeSleep() {
     if (AppConfig::kStayAwakeOnUsb && HWCDC::isPlugged()) return;
 
     const uint32_t now = millis();
+    // Render with this same `now`: an event that ended since the loop's update()
+    // may still hold its pin high, and isIdle() stays false until it is turned off.
+    stateHandler.update(snapshot(), now);
     if (!stateHandler.isIdle(now) || pairingService.isActive() || alertPending || fallService.isCountingDown()) return;
+    if (batteryToReport || now - lastSendMs < AppConfig::kRadioSendSettleMs) return;  // let the frame go out
     if (digitalRead(AppConfig::kPairingButtonPin) == LOW || digitalRead(AppConfig::kAlertButtonPin) == LOW ||
         pairingButton.isPressed() || alertButton.isPressed()) {
         return;  // pressed, or the release is still being debounced
@@ -292,6 +320,7 @@ void AppController::maybeSleep() {
     esp_sleep_enable_gpio_wakeup();
     if (timerMs > 0) esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(timerMs) * 1000);
 
+    stateHandler.prepareForSleep();
     esp_light_sleep_start();
 
     // Back to no interrupt type: left at a level type, a pin still at that level
@@ -326,6 +355,7 @@ void AppController::sendMessage(const String& mac, Protocol::MessageType type, u
     uint8_t frame[Protocol::kMaxFrameSize];
     const size_t size = Protocol::buildFrame(frame, sizeof(frame), type, seq);
     espNow.send(mac, frame, size);
+    lastSendMs = millis();
 }
 
 void AppController::processRadio() {
@@ -352,7 +382,7 @@ void AppController::processFrame(const RadioFrame& frame) {
             handleAlertAck(sender, header.seq);
             break;
         default:
-            break;  // PairRequest, PairConfirm and Alert are never addressed to a belt
+            break;  // PairRequest, PairConfirm, Alert and BatteryStatus are never addressed to a belt
     }
 }
 

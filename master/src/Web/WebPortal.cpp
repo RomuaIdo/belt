@@ -433,6 +433,14 @@ void WebPortal::handleDevicesList() {
         for (const auto& chatId : peer.getChatIds()) {
             chatIds.add(chatId);
         }
+        // Only once the belt has sent a reading since the master booted.
+        BatteryReading reading;
+        if (batteryOf && batteryOf(peer.getMacAddress(), reading)) {
+            JsonObject battery = item["bateria"].to<JsonObject>();
+            battery["percentual"] = reading.percent;
+            battery["mv"] = reading.mv;
+            battery["idade_s"] = (millis() - reading.receivedAtMs) / 1000;
+        }
     }
     sendJson(200, doc);
 }

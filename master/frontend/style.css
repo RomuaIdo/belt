@@ -138,6 +138,7 @@ h1, h2 { margin: 0; line-height: 1.25; font-weight: 600; }
 .mac-sm { font-size: 0.8125rem; color: var(--ink-soft); }
 
 .dev-meta { margin: 4px 0 0; color: var(--ink-soft); font-size: 0.8125rem; }
+.battery.is-low { color: var(--rust); font-weight: 600; }
 
 .state-dot {
   display: inline-flex;

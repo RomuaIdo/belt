@@ -69,6 +69,8 @@ private:
     void handlePairRequest(const String& mac);
     void handlePairConfirm(const String& mac, uint16_t seq);
     void handleAlert(const String& mac, uint16_t seq);
+    void handleBatteryStatus(const String& mac, const RadioFrame& frame);
+    bool batteryOf(const String& mac, BatteryReading& out) const;
     bool isNewAlert(const String& mac, uint16_t seq);
     void logUnknownBeltAlert(const String& mac);
     void sendMessage(const String& mac, Protocol::MessageType type, uint16_t seq);
@@ -109,6 +111,9 @@ private:
         uint16_t seq;
     };
     std::vector<LastAlert> lastAlerts;
+
+    // Last battery reading per registered belt, shown on the page (RAM only).
+    std::vector<BatteryReading> batteryReadings;
 
     uint16_t nextSeq = 1;
     uint16_t acceptSeq = 0;      // seq of the PairAccept awaiting its PairConfirm

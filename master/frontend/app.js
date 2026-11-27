@@ -220,6 +220,18 @@ function pendingRow(p, isNew) {
   );
 }
 
+// Below this the battery line is highlighted.
+const BATTERY_LOW_PERCENT = 20;
+
+// Last reading the belt sent since the master booted; null (nothing shown) before that.
+function batteryLine(b) {
+  if (!b) return null;
+  const when = new Date(Date.now() - (b.idade_s || 0) * 1000).toISOString();
+  const low = b.percentual < BATTERY_LOW_PERCENT;
+  return h('p', { class: low ? 'dev-meta battery is-low' : 'dev-meta battery',
+                  text: `Battery ${b.percentual}% · ${relativeTime(when)}` });
+}
+
 function deviceRow(d) {
   const count = (d.chat_ids || []).length;
   return h('li', {},
@@ -228,6 +240,7 @@ function deviceRow(d) {
       h('span', { class: 'dev-alias', text: count === 1 ? '1 recipient' : `${count} recipients` }),
     ),
     h('p', { class: 'mac mac-sm', text: d.mac.toUpperCase() }),
+    batteryLine(d.bateria),
     h('div', { class: 'row-actions' },
       h('button', { class: 'btn', type: 'button', onclick: () => startEdit(d) }, 'Edit'),
       h('button', { class: 'btn btn-quiet', type: 'button', onclick: () => removeDevice(d) }, 'Remove'),

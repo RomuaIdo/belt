@@ -50,7 +50,8 @@
 // state is BatteryLow (quiet, still sleeps) and every low reading plays the BatteryLow
 // event (3 beeps), held back until the belt is idle (no fall countdown, no alert
 // waiting for its ack, no other feedback playing), so it never sounds like a failed
-// cancel or covers the countdown.
+// cancel or covers the countdown. Every reading is also sent to the paired master
+// (BatteryStatus, no ack), which shows the last one on its page.
 class AppController {
 public:
     AppController();
@@ -74,6 +75,7 @@ private:
     void maybeSleep();
     void checkBattery();
     void announceBatteryLow();
+    void reportBattery();
     SystemSnapshot snapshot() const;
 
     MasterLinkStorage masterLinkStorage;
@@ -95,6 +97,8 @@ private:
     uint32_t lastImuReadMs = 0;    // last FIFO read
     uint32_t lastMotionMs = 0;     // last any-motion seen
     bool batteryLowToAnnounce = false;  // low reading whose beeps wait for the belt to be idle
+    bool batteryToReport = false;       // reading not sent to the master yet
+    uint32_t lastSendMs = 0;            // last ESP-NOW frame handed to the radio
 
     bool alertPending = false;     // Alert sent, no AlertAck yet
     uint16_t alertSeq = 0;         // seq of the pending Alert (resends reuse it)

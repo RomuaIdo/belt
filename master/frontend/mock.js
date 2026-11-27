@@ -14,6 +14,12 @@ let dispositivos = [
   },
 ];
 
+// Last battery reading per belt (the master keeps it in RAM only). A belt that has
+// not sent one since boot has no entry, and the page shows nothing for it.
+const baterias = {
+  'A0:B7:65:2C:1D:E4': { percentual: 72, mv: 3890, at: Date.now() - 12 * 60 * 1000 },
+};
+
 // Belts asking to pair. The first keeps repeating its request (every GET shows it as
 // "just now") and confirms on Save; the second stopped answering, so Save on it fails
 // with "the belt did not answer".
@@ -177,7 +183,15 @@ export function mockApi(method, path, body) {
 
   // GET /api/dispositivos
   if (method === 'GET' && path === '/api/dispositivos') {
-    return delay({ dispositivos: dispositivos.map((d) => ({ ...d, chat_ids: [...d.chat_ids] })) });
+    return delay({
+      dispositivos: dispositivos.map((d) => {
+        const b = baterias[d.mac];
+        const bateria = b
+          ? { percentual: b.percentual, mv: b.mv, idade_s: Math.floor((Date.now() - b.at) / 1000) }
+          : undefined;
+        return { ...d, chat_ids: [...d.chat_ids], ...(bateria ? { bateria } : {}) };
+      }),
+    });
   }
 
   // PUT /api/dispositivos/{mac}
