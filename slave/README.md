@@ -44,7 +44,7 @@ Header-only files (such as `State/Feedback.h`) do not require a `.cpp` file.
   countdown, processes incoming radio frames, and hands the current state to the
   `StateHandler`.
 
-**Pairing** (pairing button, GPIO 2). The belt starts it; only the master knows the
+**Pairing** (pairing button, GPIO 4). The belt starts it; only the master knows the
 router's Wi-Fi channel, so the belt looks for it:
 
 1. The belt scans channels 1 to 13 (300 ms each), sending a broadcast `PairRequest` on each.
@@ -145,7 +145,7 @@ Defined in `include/Util/AppConfig.h`.
 
 | Function | Pin |
 |---|---|
-| Pairing button (to GND, internal pull-up) | GPIO 2 |
+| Pairing button (to GND, internal pull-up) | GPIO 4 |
 | Alert button (to GND, internal pull-up) | GPIO 7 |
 | BMI270 CS / MOSI (SDA) / SCK (SCL) / MISO (SDO) | GPIO 10 / 12 / 13 / 11 |
 | BMI270 INT1 | GPIO 9 |

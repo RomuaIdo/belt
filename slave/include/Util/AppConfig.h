@@ -5,7 +5,7 @@
 namespace AppConfig {
 
 // Pinout
-constexpr uint8_t kPairingButtonPin = 2; // Target PCB pin
+constexpr uint8_t kPairingButtonPin = 4; // Target PCB pin
 constexpr uint8_t kAlertButtonPin = 7;   // Target PCB pin
 // BMI270 over SPI. Routed through the GPIO matrix (not the FSPI IOMUX order),
 // fine at kImuSpiHz (matrix limit is ~40 MHz).
